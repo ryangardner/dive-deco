@@ -28,7 +28,7 @@ fn test_deco_single_gas() {
         deco_stages, tts, ..
     } = model.deco(vec![air]).unwrap();
 
-    assert_eq!(tts, Time::from_seconds(754.));
+    assert_eq!(tts, Time::from_seconds(755.));
     assert_eq!(deco_stages.len(), 5);
 
     let expected_deco_stages = vec![
@@ -57,7 +57,7 @@ fn test_deco_single_gas() {
             stage_type: DecoStageType::DecoStop,
             start_depth: Depth::from_meters(3.0),
             end_depth: Depth::from_meters(3.0),
-            duration: Time::from_seconds(400.),
+            duration: Time::from_seconds(401.),
             gas: air,
         },
         DecoStage {

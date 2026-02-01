@@ -9,6 +9,8 @@ use crate::{
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+const METERS_PER_BAR: f64 = 10.0;
+
 #[derive(Copy, Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Compartment {
@@ -108,7 +110,7 @@ impl Compartment {
     pub fn ceiling(&self) -> Depth {
         let mut ceil = (self.min_tolerable_amb_pressure
             - (self.model_config.surface_pressure as f64 / 1000.))
-            * 10.;
+            * METERS_PER_BAR;
         // cap ceiling at 0 if min tolerable leading compartment pressure depth equivalent negative
         if ceil < 0. {
             ceil = 0.;
@@ -120,7 +122,7 @@ impl Compartment {
     // tissue supersaturation (gf99, surface gf)
     pub fn supersaturation(&self, surface_pressure: MbarPressure, depth: Depth) -> Supersaturation {
         let p_surf = (surface_pressure as f64) / 1000.;
-        let p_amb = p_surf + (depth.as_meters() / 10.);
+        let p_amb = p_surf + (depth.as_meters() / METERS_PER_BAR);
         let m_value = self.m_value_raw;
         let m_value_surf = self.m_value(Depth::zero(), surface_pressure, 100);
         let gf_99 = ((self.total_ip - p_amb) / (m_value - p_amb)) * 100.;
@@ -139,7 +141,7 @@ impl Compartment {
         let (_, a_coeff_adjusted, b_coeff_adjusted) =
             self.max_gf_adjusted_zhl_params(weighted_zhl_params, max_gf);
         let p_surf = (surface_pressure as f64) / 1000.;
-        let p_amb = p_surf + (depth.as_meters() / 10.);
+        let p_amb = p_surf + (depth.as_meters() / METERS_PER_BAR);
 
         a_coeff_adjusted + (p_amb / b_coeff_adjusted)
     }
@@ -181,6 +183,62 @@ impl Compartment {
         let n2_final = self.n2_ip + n2_p_comp_delta;
 
         (he_final, n2_final)
+    }
+
+    // Update compartment inert gas pressure using Schreiner equation for linear depth change
+    pub fn update_pressure_schreiner(
+        &mut self,
+        time: Time,
+        rate: f64, // meters per second
+        gas: &Gas,
+        surface_pressure: MbarPressure,
+        current_depth: Depth,
+    ) {
+        let t = time.as_seconds();
+        let PartialPressures {
+            he: he_p_alv_0,
+            n2: n2_p_alv_0,
+            ..
+        } = gas.inspired_partial_pressures(current_depth, surface_pressure);
+
+        // R = rate / 10 * f_gas
+        // rate is m/s. Pressure changes by 1 bar per 10m.
+        // so rate/10 is bar/s.
+        let pressure_change_rate = rate / METERS_PER_BAR;
+
+        let he_r = pressure_change_rate * gas.fraction_he();
+        let n2_r = pressure_change_rate * gas.fraction_n2();
+
+        // Apply Schreiner
+        self.he_ip =
+            self.schreiner_equation(self.he_ip, he_p_alv_0, he_r, t, self.he_factor);
+        self.n2_ip =
+            self.schreiner_equation(self.n2_ip, n2_p_alv_0, n2_r, t, self.n2_factor);
+        self.total_ip = self.he_ip + self.n2_ip;
+    }
+
+    fn schreiner_equation(
+        &self,
+        p_tis_0: Pressure,
+        p_alv_0: Pressure,
+        r: f64,
+        t: f64,
+        factor: f64,
+    ) -> Pressure {
+        // factor is 1/tau where tau is halftime in seconds
+        // k = ln(2) / tau = factor * ln(2).
+        let k = factor * core::f64::consts::LN_2;
+
+        // P = P_alv_0 + R(t - 1/k) - (P_alv_0 - P_tis_0 - R/k) * exp(-kt)
+        // exp(-kt) = 2^(-t * factor)
+        // We can use exp2 directly for precision/consistency, or exp(-kt).
+        // 2^(-x) = exp(-x * ln(2)).
+        // -t * factor = -t * k / ln(2).
+        // So exp(-kt) is exactly 2^(-t * factor).
+
+        let decay_term = exp2(-t * factor);
+
+        p_alv_0 + r * (t - 1.0 / k) - (p_alv_0 - p_tis_0 - r / k) * decay_term
     }
 
     // compartment pressure change for inert gas (Haldane equation)

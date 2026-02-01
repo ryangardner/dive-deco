@@ -110,25 +110,66 @@ impl DecoModel for BuhlmannModel {
     fn record_travel(&mut self, target_depth: Depth, time: Time, gas: &Gas) {
         self.validate_depth(target_depth);
         self.state.gas = *gas;
-        let mut current_depth = self.state.depth;
-        let distance = target_depth - current_depth;
+        let distance = target_depth - self.state.depth;
         let travel_time = time;
-        let dist_rate = distance.as_meters() / travel_time.as_seconds();
-        let mut i = 0;
-        while i < travel_time.as_seconds() as i32 {
-            self.state.time += Time::from_seconds(1.);
-            current_depth += Depth::from_meters(dist_rate);
+        let seconds = travel_time.as_seconds();
+
+        if seconds <= 0.0 {
+            self.state.depth = target_depth;
             let record = RecordData {
-                depth: current_depth,
-                time: Time::from_seconds(1.),
+                depth: target_depth,
+                time: Time::zero(),
                 gas,
             };
-            self.recalculate(record);
-            i += 1;
+            self.recalculate_compartments(&record);
+            return;
+        }
+
+        let dist_rate = distance.as_meters() / seconds;
+
+        // Optimize: Use Schreiner equation for tissue loading
+        let surface_pressure = self.config.surface_pressure;
+        for compartment in self.compartments.iter_mut() {
+            compartment.update_pressure_schreiner(
+                travel_time,
+                dist_rate,
+                gas,
+                surface_pressure,
+                self.state.depth,
+            );
+        }
+
+        // Handle OxTox and time updates
+        let iterations = seconds as i32;
+        if !self.is_sim() {
+            let mut current_depth = self.state.depth;
+            let mut i = 0;
+            while i < iterations {
+                self.state.time += Time::from_seconds(1.);
+                current_depth += Depth::from_meters(dist_rate);
+                let record = RecordData {
+                    depth: current_depth,
+                    time: Time::from_seconds(1.),
+                    gas,
+                };
+                self.recalculate_ox_tox(&record);
+                i += 1;
+            }
+        } else {
+            self.state.time += Time::from_seconds(iterations as f64);
         }
 
         // align with target depth with lost precision @todo: round / bignumber?
         self.state.depth = target_depth;
+
+        // Recalculate compartments (M-values) for the final depth
+        // Time is zero because pressures are already updated via Schreiner
+        let final_record = RecordData {
+            depth: target_depth,
+            time: Time::zero(),
+            gas,
+        };
+        self.recalculate_compartments(&final_record);
     }
 
     fn record_travel_with_rate(

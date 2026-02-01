@@ -66,6 +66,18 @@ impl Gas {
         s
     }
 
+    pub fn fraction_o2(&self) -> Pressure {
+        self.o2_pp
+    }
+
+    pub fn fraction_he(&self) -> Pressure {
+        self.he_pp
+    }
+
+    pub fn fraction_n2(&self) -> Pressure {
+        self.n2_pp
+    }
+
     /// gas partial pressures
     pub fn partial_pressures(
         &self,
