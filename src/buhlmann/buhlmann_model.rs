@@ -6,7 +6,7 @@ use crate::common::GasMix;
 use crate::common::{abs, ceil, ln};
 use crate::common::{
     AscentRatePerMinute, ConfigValidationErr, Deco, DecoModel, DecoModelConfig, Depth, DiveState,
-    GradientFactor, OxTox, RecordData,
+    GradientFactor, Otu, OxTox, RecordData,
 };
 use crate::{CeilingType, DecoCalculationError, DecoRuntime, GradientFactors, Sim, Time};
 use alloc::vec;
@@ -111,93 +111,64 @@ impl DecoModel for BuhlmannModel {
     // @todo: Schreiner equation instead of Haldane to avoid imprecise intervals
     fn record_travel(&mut self, target_depth: Depth, time: Time, gas: &BreathingSource) {
         self.validate_depth(target_depth);
-        self.state.gas = *gas;
-
         let start_depth = self.state.depth;
 
-        // Update time and depth in state
-        self.state.time += time;
-        self.state.depth = target_depth;
-
-        let travel_time_mins = time.as_minutes();
-        if travel_time_mins <= 0.0 {
+        // 1) Zero-time travel: still update state + derived values at target depth.
+        if time.as_seconds() <= 0.0 {
+            self.state.depth = target_depth;
+            self.state.gas = *gas;
+            let record = RecordData {
+                depth: target_depth,
+                time: Time::zero(),
+                gas,
+            };
+            self.recalculate_compartments(&record);
             return;
         }
 
-        // Calculate inspired partial pressures at start and end
-        // Note: We use the water vapor adjusted calculation inside the model
-        use crate::common::physics::depth_to_pressure;
-        let start_p_amb = depth_to_pressure(
-            start_depth,
-            self.config.surface_pressure,
-            self.config.water_density,
-        );
-        let end_p_amb = depth_to_pressure(
-            target_depth,
-            self.config.surface_pressure,
-            self.config.water_density,
-        );
+        // 2) No movement -> treat as constant depth segment (preserves any "record" side-effects).
+        // Using crate::common::math_utils::abs instead of directly calling abs() on f64 to match imports
+        use crate::common::math_utils::abs;
 
-        let start_pp = gas.inspired_partial_pressures(start_p_amb);
-        let end_pp = gas.inspired_partial_pressures(end_p_amb);
-
-        // Recalculate all compartments using Schreiner equation
-        // (This does the heavy lifting analytically instead of iterating 1s steps)
-        for compartment in self.compartments.iter_mut() {
-            compartment.recalculate_schreiner(
-                start_pp.n2,
-                end_pp.n2,
-                start_pp.he,
-                end_pp.he,
-                travel_time_mins,
-            );
+        if abs((target_depth - start_depth).as_meters()) < 1e-9 {
+            self.record(target_depth, time, gas);
+            return;
         }
 
-        // After updating compartments, we calculate CNS toxicity.
-        // We use the 'record' struct which implies a specific depth.
-        // This is consistent with standard implementations for short segments.
+        // 3) If CCR setpoint clamp boundary is crossed, split into two Schreiner segments.
+        // Clamp boundary: (P_amb - P_wv) == setpoint  => P_amb == setpoint + P_wv
+        let split_depth_opt = gas
+            .ccr_clamp_transition_pressure()
+            .map(|p_split| {
+                crate::common::physics::pressure_to_depth(
+                    p_split,
+                    self.config.surface_pressure,
+                    self.config.water_density,
+                )
+            })
+            .filter(|d_split| {
+                // keep only if split depth lies strictly between start and end
+                let between = (*d_split >= start_depth && *d_split <= target_depth)
+                    || (*d_split >= target_depth && *d_split <= start_depth);
+                between
+                    && abs((*d_split - start_depth).as_meters()) > 1e-6
+                    && abs((target_depth - *d_split).as_meters()) > 1e-6
+            });
 
-        if !self.is_sim() {
-            // CNS accumulation is non-linear (exponential at high PO2).
-            // We iterate in 1-second intervals (or coarser if needed) to integrate CNS.
-            // OxTox calc is cheap (table lookup), making this acceptable for travel segments.
-            let steps = time.as_seconds() as usize;
-            if steps > 0 {
-                let depth_delta =
-                    (target_depth.as_meters() - start_depth.as_meters()) / steps as f64;
-                let mut current_depth_m = start_depth.as_meters();
-                // We use the gas set in state
+        if let Some(split_depth) = split_depth_opt {
+            let total_dist = abs((target_depth - start_depth).as_meters());
+            let dist_1 = abs((split_depth - start_depth).as_meters());
+            let t1_sec = time.as_seconds() * (dist_1 / total_dist);
+            let t2_sec = time.as_seconds() - t1_sec;
 
-                for _ in 0..steps {
-                    current_depth_m += depth_delta;
-                    let step_record = RecordData {
-                        depth: Depth::from_meters(current_depth_m),
-                        time: Time::from_seconds(1.),
-                        gas,
-                    };
-                    self.recalculate_ox_tox(&step_record);
-                }
-            } else {
-                // fractional second travel? Use average as fallback or just 1 step ending at target
-                let record = RecordData {
-                    depth: target_depth,
-                    time,
-                    gas,
-                };
-                self.recalculate_ox_tox(&record);
-            }
+            let t1 = Time::from_seconds(t1_sec);
+            let t2 = Time::from_seconds(t2_sec);
+
+            self.record_travel_schreiner_segment(start_depth, split_depth, t1, gas);
+            self.record_travel_schreiner_segment(split_depth, target_depth, t2, gas);
+        } else {
+            self.record_travel_schreiner_segment(start_depth, target_depth, time, gas);
         }
-
-        // Finally, trigger a standard recalculate_compartments to ensure M-values, GF-factors, etc
-        // are consistent with the FINAL depth (target_depth).
-        let final_record = RecordData {
-            depth: target_depth,
-            time: Time::zero(), // Time already accounted for
-            gas,
-        };
-
-        // Update derived values (M-values, ceilings) without adding more pressure/time.
-        self.recalculate_compartments(&final_record);
     }
 
     fn record_travel_with_rate(
@@ -598,5 +569,101 @@ impl BuhlmannModel {
         if depth < Depth::zero() {
             panic!("Invalid depth [{depth}]");
         }
+    }
+
+    pub fn calculate_otu(&self) -> Otu {
+        self.otu()
+    }
+
+    fn record_travel_schreiner_segment(
+        &mut self,
+        start_depth: Depth,
+        end_depth: Depth,
+        time: Time,
+        gas: &BreathingSource,
+    ) {
+        use crate::common::physics::depth_to_pressure;
+
+        let travel_time_mins = time.as_minutes();
+        if travel_time_mins <= 0.0 {
+            // Still update final depth derived values
+            self.state.depth = end_depth;
+            self.state.gas = *gas;
+            let record = RecordData {
+                depth: end_depth,
+                time: Time::zero(),
+                gas,
+            };
+            self.recalculate_compartments(&record);
+            return;
+        }
+
+        // Schreiner endpoints
+        let p_start = depth_to_pressure(
+            start_depth,
+            self.config.surface_pressure,
+            self.config.water_density,
+        );
+        let p_end = depth_to_pressure(
+            end_depth,
+            self.config.surface_pressure,
+            self.config.water_density,
+        );
+
+        let pp_start = gas.inspired_partial_pressures(p_start);
+        let pp_end = gas.inspired_partial_pressures(p_end);
+
+        for compartment in self.compartments.iter_mut() {
+            compartment.recalculate_schreiner(
+                pp_start.n2,
+                pp_end.n2,
+                pp_start.he,
+                pp_end.he,
+                travel_time_mins,
+            );
+        }
+
+        // Integrate ox-tox for the segment (1s steps + fractional remainder)
+        if !self.is_sim() {
+            let total_sec = time.as_seconds();
+            let whole_steps = total_sec.floor() as usize;
+            let rem = total_sec - (whole_steps as f64);
+
+            if whole_steps > 0 {
+                let delta =
+                    (end_depth.as_meters() - start_depth.as_meters()) / (whole_steps as f64);
+                let mut d_m = start_depth.as_meters();
+                for _ in 0..whole_steps {
+                    d_m += delta;
+                    let step = RecordData {
+                        depth: Depth::from_meters(d_m),
+                        time: Time::from_seconds(1.0),
+                        gas,
+                    };
+                    self.recalculate_ox_tox(&step);
+                }
+            }
+
+            if rem > 1e-9 {
+                let step = RecordData {
+                    depth: end_depth,
+                    time: Time::from_seconds(rem),
+                    gas,
+                };
+                self.recalculate_ox_tox(&step);
+            }
+        }
+
+        // Update state + derived values at segment end
+        self.state.time += time;
+        self.state.depth = end_depth;
+        self.state.gas = *gas;
+
+        let final_record = RecordData {
+            depth: end_depth,
+            time: Time::zero(),
+            gas,
+        };
+        self.recalculate_compartments(&final_record);
     }
 }

@@ -24,24 +24,10 @@ fn test_hypoxic_ascent_limit() {
     );
 
     // Calculate deco with ONLY this gas available
-    let runtime = deco
-        .calc(model, vec![hypoxic_gas])
-        .expect("Deco calc failed");
+    let runtime = deco.calc(model, vec![hypoxic_gas]);
 
-    // Check final stage
-    let last_stage = runtime.deco_stages.last().unwrap();
-
-    // Expectation: We should NOT reach 0m.
-    // If the bug exists, it will likely return end_depth = 0m.
-    println!("Last stage end depth: {:?}", last_stage.end_depth);
-
-    assert!(
-        last_stage.end_depth > Depth::from_meters(0.0),
-        "Algorithm allowed ascent to surface on 10% O2 gas! Final depth: {:?}",
-        last_stage.end_depth
+    assert_eq!(
+        runtime,
+        Err(dive_deco::DecoCalculationError::NoBreathableGasToSurface)
     );
-
-    // Ideally it should stop at MinOD (~6-9m depending on logic).
-    // Let's assume we implement MinOD 0.18 -> ~8m.
-    // assert!(last_stage.end_depth >= Depth::from_meters(4.0));
 }

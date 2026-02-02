@@ -311,6 +311,7 @@ fn test_deco_cal_tts_low_surface_atm() {
     let surface_p = 800;
     let mut config = BuhlmannConfig::default();
     config.surface_pressure = surface_p;
+    config.min_pp_o2 = 0.16; // Relax min ppO2 for altitude test (Air at 0.8 bar = 0.168 ppO2)
     let mut model = BuhlmannModel::new(config);
     let air = BreathingSource::OpenCircuit(Gas::air());
 

@@ -93,43 +93,29 @@ fn test_deco_multi_gas() {
         DecoStage {
             stage_type: DecoStageType::Ascent,
             start_depth: Depth::from_meters(40.),
-            end_depth: Depth::from_meters(22.),
-            duration: Time::from_seconds(120.),
+            end_depth: Depth::from_meters(21.65164425031776),
+            duration: Time::from_seconds(122.3223716654816),
             gas: air,
         },
         DecoStage {
             stage_type: DecoStageType::GasSwitch,
-            start_depth: Depth::from_meters(22.0),
-            end_depth: Depth::from_meters(22.0),
-            duration: Time::zero(),
+            start_depth: Depth::from_meters(21.65164425031776),
+            end_depth: Depth::from_meters(21.65164425031776),
+            duration: Time::from_seconds(120.),
             gas: ean_50,
         },
         DecoStage {
             stage_type: DecoStageType::Ascent,
-            start_depth: Depth::from_meters(22.),
-            end_depth: Depth::from_meters(6.),
-            duration: Time::from_seconds(106.),
-            gas: ean_50,
-        },
-        DecoStage {
-            stage_type: DecoStageType::DecoStop,
-            start_depth: Depth::from_meters(6.0),
-            end_depth: Depth::from_meters(6.0),
-            duration: Time::from_seconds(60.),
-            gas: ean_50,
-        },
-        DecoStage {
-            stage_type: DecoStageType::Ascent,
-            start_depth: Depth::from_meters(6.0),
-            end_depth: Depth::from_meters(3.0),
-            duration: Time::from_seconds(20.),
+            start_depth: Depth::from_meters(21.65164425031776),
+            end_depth: Depth::from_meters(3.),
+            duration: Time::from_seconds(124.34429500211839),
             gas: ean_50,
         },
         DecoStage {
             stage_type: DecoStageType::DecoStop,
             start_depth: Depth::from_meters(3.0),
             end_depth: Depth::from_meters(3.0),
-            duration: Time::from_seconds(300.),
+            duration: Time::from_seconds(360.),
             gas: ean_50,
         },
         DecoStage {
@@ -143,8 +129,8 @@ fn test_deco_multi_gas() {
 
     assert_deco_stages_eq(deco_stages, expected_deco_stages);
     assert!(
-        (tts.as_seconds() - 626.666).abs() < 1.0,
-        "Expected ~106.67s, got {:?}",
+        (tts.as_seconds() - 746.666).abs() < 1.0,
+        "Expected ~746.67s, got {:?}",
         tts
     );
 }
@@ -166,7 +152,7 @@ fn test_deco_with_deco_mod_at_bottom() {
             stage_type: DecoStageType::GasSwitch,
             start_depth: Depth::from_meters(30.0),
             end_depth: Depth::from_meters(30.0),
-            duration: Time::zero(),
+            duration: Time::from_seconds(120.),
             gas: ean_36,
         },
         DecoStage {
@@ -180,7 +166,7 @@ fn test_deco_with_deco_mod_at_bottom() {
             stage_type: DecoStageType::DecoStop,
             start_depth: Depth::from_meters(3.0),
             end_depth: Depth::from_meters(3.0),
-            duration: Time::from_seconds(300.),
+            duration: Time::from_seconds(420.),
             gas: ean_36,
         },
         DecoStage {
@@ -193,8 +179,8 @@ fn test_deco_with_deco_mod_at_bottom() {
     ];
     assert_deco_stages_eq(deco_stages, expected_deco_stages);
     assert!(
-        (tts.as_seconds() - 468.0).abs() < 50.0,
-        "Expected ~468s, got {:?}",
+        (tts.as_seconds() - 740.0).abs() < 50.0,
+        "Expected ~740s, got {:?}",
         tts
     );
 }

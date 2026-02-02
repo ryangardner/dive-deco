@@ -1,4 +1,4 @@
-use crate::common::global_types::Pressure;
+use crate::common::global_types::{MbarPressure, Pressure};
 use alloc::string::String;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -112,20 +112,34 @@ impl GasMix {
         self.partial_pressures(gas_pressure)
     }
 
-    /// MOD (Open Circuit)
+    /// Max Operating Depth (MOD) (Open Circuit) using standard logic.
     pub fn max_operating_depth(&self, pp_o2_limit: Pressure) -> Depth {
-        Depth::from_meters(10. * ((pp_o2_limit / self.fraction_o2) - 1.))
+        if self.fraction_o2 <= f64::EPSILON {
+            // If O2 is 0%, MOD is effectively infinite based on O2 toxicity,
+            // though practically unbreathable.
+            // Standard behavior usually returns a very deep depth.
+            return Depth::from_meters(10000.0);
+        }
+        let p_target = pp_o2_limit / self.fraction_o2;
+        // Standard dive computers often just allow MOD = (P_target - 1 bar) * 10
+        // Simplistic assuming 1 bar surface.
+        // We can replicate logic similar to min_operating_depth but for max.
+        Depth::from_meters((p_target - 1.0) * 10.0)
     }
 
-    /// END (Open Circuit)
-    pub fn equivalent_narcotic_depth(&self, depth: Depth) -> Depth {
-        // @todo refactor
-        let mut end = (depth + Depth::from_meters(10.)) * Depth::from_meters(1. - self.fraction_he)
-            - Depth::from_meters(10.);
-        if end < Depth::zero() {
-            end = Depth::zero();
+    /// Physics-consistent MOD (altitude + water density aware).
+    /// Uses *dry* ppO2 convention (FO2 * P_amb), consistent with typical MOD labeling.
+    pub fn max_operating_depth_at(
+        &self,
+        pp_o2_limit: Pressure,
+        surface_pressure: MbarPressure,
+        water_density: f64,
+    ) -> Depth {
+        if self.fraction_o2 <= f64::EPSILON {
+            return Depth::from_meters(10000.0);
         }
-        end
+        let p_target = pp_o2_limit / self.fraction_o2;
+        crate::common::physics::pressure_to_depth(p_target, surface_pressure, water_density)
     }
 
     /// Min Operating Depth (MinOD) (Open Circuit)
@@ -154,9 +168,37 @@ impl GasMix {
         }
     }
 
+    /// Physics-consistent MinOD (altitude + water density aware).
+    /// Uses *dry* ppO2 convention (FO2 * P_amb).
+    pub fn min_operating_depth_at(
+        &self,
+        min_pp_o2: Pressure,
+        surface_pressure: MbarPressure,
+        water_density: f64,
+    ) -> Depth {
+        if self.fraction_o2 <= f64::EPSILON {
+            return Depth::from_meters(10000.0);
+        }
+        let p_target = min_pp_o2 / self.fraction_o2;
+        crate::common::physics::pressure_to_depth(p_target, surface_pressure, water_density)
+    }
+
     // TODO standard nitrox (bottom and deco) and trimix gasses
     pub fn air() -> Self {
         Self::new(0.21, 0.)
+    }
+
+    /// Equivalent Narcotic Depth (END) assuming N2 is narcotic and He is not.
+    /// END = (Depth + 10m) * (1 - Fraction_He) - 10m.
+    pub fn equivalent_narcotic_depth(&self, depth: Depth) -> Depth {
+        let abs_pressure = (depth.as_meters() + 10.0) / 10.0; // approx bar
+        let equivalent_air_pressure = abs_pressure * (1.0 - self.fraction_he);
+        let end_m = (equivalent_air_pressure * 10.0) - 10.0;
+        if end_m < 0.0 {
+            Depth::zero()
+        } else {
+            Depth::from_meters(end_m)
+        }
     }
 }
 
@@ -244,6 +286,28 @@ impl BreathingSource {
         }
     }
 
+    /// Physics-consistent MOD for planning decisions.
+    pub fn max_operating_depth_at(
+        &self,
+        pp_o2_limit: Pressure,
+        surface_pressure: MbarPressure,
+        water_density: f64,
+    ) -> Depth {
+        match self {
+            BreathingSource::OpenCircuit(mix) => {
+                mix.max_operating_depth_at(pp_o2_limit, surface_pressure, water_density)
+            }
+            BreathingSource::ClosedCircuit { setpoint, .. } => {
+                // If setpoint itself violates limit, this "source" should not be used as a deco gas.
+                if *setpoint > pp_o2_limit {
+                    Depth::zero()
+                } else {
+                    Depth::from_meters(1000.0)
+                }
+            }
+        }
+    }
+
     /// Equivalent Narcotic Depth (END).
     /// Used for gas density/narcosis checks.
     pub fn equivalent_narcotic_depth(&self, depth: Depth) -> Depth {
@@ -280,6 +344,40 @@ impl BreathingSource {
                     Depth::zero()
                 }
             }
+        }
+    }
+
+    /// Physics-consistent MinOD for planning decisions.
+    pub fn min_operating_depth_at(
+        &self,
+        min_pp_o2: Pressure,
+        surface_pressure: MbarPressure,
+        water_density: f64,
+    ) -> Depth {
+        match self {
+            BreathingSource::OpenCircuit(mix) => {
+                mix.min_operating_depth_at(min_pp_o2, surface_pressure, water_density)
+            }
+            BreathingSource::ClosedCircuit { setpoint, .. } => {
+                if *setpoint < min_pp_o2 {
+                    Depth::from_meters(10000.0)
+                } else {
+                    Depth::zero()
+                }
+            }
+        }
+    }
+
+    /// Ambient pressure (bar) at which CCR "impossible setpoint" clamping begins *for inspired gas*.
+    /// Clamp happens when (P_amb - P_wv) <= setpoint.
+    ///
+    /// Useful for splitting Schreiner travel into two linear segments.
+    pub(crate) fn ccr_clamp_transition_pressure(&self) -> Option<Pressure> {
+        match self {
+            BreathingSource::ClosedCircuit { setpoint, .. } => {
+                Some(*setpoint + ALVEOLI_WATER_VAPOR_PRESSURE)
+            }
+            _ => None,
         }
     }
 
@@ -384,7 +482,7 @@ mod tests {
             (0.21, 0., 1.4, 56.66666666666666),
             (0.50, 0., 1.6, 22.),
             (0.21, 0.35, 1.4, 56.66666666666666),
-            (0., 0., 1.4, f64::INFINITY),
+            (0., 0., 1.4, 10000.0),
         ];
         for (pp_o2, pe_he, max_pp_o2, expected_mod) in test_cases {
             let gas = GasMix::new(pp_o2, pe_he);

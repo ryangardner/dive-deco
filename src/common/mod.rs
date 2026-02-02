@@ -4,7 +4,7 @@ mod deco_model;
 mod depth;
 mod gas;
 mod global_types;
-mod math_utils;
+pub mod math_utils;
 mod ox_tox;
 mod record;
 mod sim;

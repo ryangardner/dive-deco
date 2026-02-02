@@ -1,4 +1,6 @@
-use dive_deco::{BuhlmannConfig, BuhlmannModel, CeilingType, DecoModel, DecoStopFormatting, Depth};
+use dive_deco::{
+    BuhlmannConfig, BuhlmannModel, CeilingType, DecoModel, DecoStopFormatting, Depth, Time,
+};
 
 fn main() {
     // model with default config (GF 100/100)
@@ -18,6 +20,7 @@ fn main() {
         stop_formatting: DecoStopFormatting::Metric,
         last_stop_depth: Depth::from_meters(3.0),
         min_pp_o2: 0.18,
+        gas_switch_duration: Time::from_minutes(2.0),
     };
     let model_2 = BuhlmannModel::new(config_instance);
     println!("{:?}", model_2.config());

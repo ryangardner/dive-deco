@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::RecordData;
 
 use super::global_types::Otu;
-use super::{powf, Cns, Depth, MbarPressure};
+use super::{exp, powf, Cns, Depth, MbarPressure};
 
 const CNS_ELIMINATION_HALF_TIME_MINUTES: f64 = 90.;
 const OTU_EQUATION_EXPONENT: f64 = -0.8333;
@@ -90,7 +90,7 @@ impl OxTox {
                 // Extrapolate exponential decay for > 1.80
                 // Using parameters from the 1.6->1.8 extension: T = 45.0 * exp(-9.808 * (po2 - 1.6))
                 let k = -9.808;
-                let t_lim = 45.0 * powf(std::f64::consts::E, k * (pp_o2 - 1.60));
+                let t_lim = 45.0 * exp(k * (pp_o2 - 1.60));
 
                 if t_lim > 0.001 {
                     // Avoid div by zero

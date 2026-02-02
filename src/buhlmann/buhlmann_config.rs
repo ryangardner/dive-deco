@@ -1,7 +1,7 @@
 use crate::{
     common::{
         AscentRatePerMinute, ConfigValidationErr, DecoModelConfig, DecoStopFormatting, Depth,
-        GradientFactor, GradientFactors, MbarPressure, Pressure,
+        GradientFactor, GradientFactors, MbarPressure, Pressure, Time,
     },
     CeilingType,
 };
@@ -30,6 +30,7 @@ pub struct BuhlmannConfig {
     pub stop_formatting: DecoStopFormatting,
     pub last_stop_depth: Depth,
     pub min_pp_o2: Pressure,
+    pub gas_switch_duration: Time,
 }
 
 impl BuhlmannConfig {
@@ -96,6 +97,11 @@ impl BuhlmannConfig {
         self.min_pp_o2 = min_pp_o2;
         self
     }
+
+    pub fn with_gas_switch_duration<T: Into<f64>>(mut self, minutes: T) -> Self {
+        self.gas_switch_duration = Time::from_minutes(minutes.into());
+        self
+    }
 }
 
 impl Default for BuhlmannConfig {
@@ -112,6 +118,7 @@ impl Default for BuhlmannConfig {
             stop_formatting: DecoStopFormatting::Metric,
             last_stop_depth: Depth::from_meters(3.0),
             min_pp_o2: 0.18,
+            gas_switch_duration: Time::from_minutes(2.0),
         }
     }
 }
@@ -163,6 +170,10 @@ impl DecoModelConfig for BuhlmannConfig {
 
     fn min_pp_o2(&self) -> f64 {
         self.min_pp_o2
+    }
+
+    fn gas_switch_duration(&self) -> Time {
+        self.gas_switch_duration
     }
 }
 

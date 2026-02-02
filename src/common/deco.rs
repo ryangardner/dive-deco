@@ -67,6 +67,7 @@ pub enum DecoCalculationError {
     EmptyGasList,
     CurrentGasNotInList,
     MissedDecoStopViolation,
+    NoBreathableGasToSurface,
 }
 
 impl fmt::Display for DecoCalculationError {
@@ -81,6 +82,12 @@ impl fmt::Display for DecoCalculationError {
             ),
             DecoCalculationError::MissedDecoStopViolation => {
                 write!(f, "Current depth is shallower than mandatory deco stop")
+            }
+            DecoCalculationError::NoBreathableGasToSurface => {
+                write!(
+                    f,
+                    "No available breathing source is breathable at the surface (min_ppO2)"
+                )
             }
         }
     }
@@ -197,14 +204,11 @@ impl Deco {
                                 // travel to MOD (using 1.6 ppo2 limit default)
                                 // We need to check if the source SUPPORTS MOD calculation (OC)
                                 // For CCR, MOD is depth limit, usually 1.6 setpoint limit or whatever
-                                let switch_gas_mod = match next_switch_gas {
-                                    BreathingSource::OpenCircuit(mix) => {
-                                        mix.max_operating_depth(1.6)
-                                    }
-                                    BreathingSource::ClosedCircuit { .. } => {
-                                        Depth::from_meters(1000.0)
-                                    } // Valid anywhere basically
-                                };
+                                let switch_gas_mod = next_switch_gas.max_operating_depth_at(
+                                    1.6,
+                                    sim_model.config().surface_pressure(),
+                                    sim_model.config().water_density(),
+                                );
 
                                 sim_model.record_travel_with_rate(
                                     switch_gas_mod,
@@ -224,19 +228,30 @@ impl Deco {
                                     gas: pre_stage_gas,
                                 });
 
-                                // switch gas @todo configurable gas change duration
-                                sim_model.record(
-                                    sim_model.dive_state().depth,
-                                    Time::zero(),
-                                    &next_switch_gas,
-                                );
+                                // switch gas with duration
+                                let switch_duration = sim_model.config().gas_switch_duration();
+                                if switch_duration.as_seconds() > 0.0 {
+                                    let half_time = switch_duration / 2.0;
+                                    // First half: Wait at depth on OLD gas
+                                    sim_model.record(post_ascent_depth, half_time, &pre_stage_gas);
+                                    // Second half: Wait at depth on NEW gas
+                                    sim_model.record(post_ascent_depth, half_time, &next_switch_gas);
+                                } else {
+                                    // Instant switch (legacy behavior)
+                                    sim_model.record(
+                                        sim_model.dive_state().depth,
+                                        Time::zero(),
+                                        &next_switch_gas,
+                                    );
+                                }
+
                                 // @todo configurable oxygen window stop
                                 let post_switch_state = sim_model.dive_state();
                                 deco_stages.push(DecoStage {
                                     stage_type: DecoStageType::GasSwitch,
                                     start_depth: post_ascent_depth,
                                     end_depth: post_switch_state.depth,
-                                    duration: Time::zero(),
+                                    duration: switch_duration,
                                     gas: next_switch_gas,
                                 });
                             }
@@ -245,13 +260,23 @@ impl Deco {
                         // switch gas without ascent
                         DecoAction::SwitchGas => {
                             let switch_gas = next_switch_gas.unwrap();
-                            // @todo configurable gas switch duration
-                            sim_model.record(pre_stage_depth, Time::zero(), &switch_gas);
+                            let switch_duration = sim_model.config().gas_switch_duration();
+
+                            if switch_duration.as_seconds() > 0.0 {
+                                let half_time = switch_duration / 2.0;
+                                // First half: Old Gas
+                                sim_model.record(pre_stage_depth, half_time, &pre_stage_gas);
+                                // Second half: New Gas
+                                sim_model.record(pre_stage_depth, half_time, &switch_gas);
+                            } else {
+                                sim_model.record(pre_stage_depth, Time::zero(), &switch_gas);
+                            }
+
                             deco_stages.push(DecoStage {
                                 stage_type: DecoStageType::GasSwitch,
                                 start_depth: pre_stage_depth,
                                 end_depth: pre_stage_depth,
-                                duration: Time::zero(),
+                                duration: switch_duration,
                                 gas: switch_gas,
                             })
                         }
@@ -350,7 +375,9 @@ impl Deco {
         let ceiling = sim_model.ceiling();
 
         // Check min_od
-        let min_od = current_gas.min_operating_depth(sim_model.config().min_pp_o2());
+        let min_pp_o2 = sim_model.config().min_pp_o2();
+        let water_density = sim_model.config().water_density();
+        let min_od = current_gas.min_operating_depth_at(min_pp_o2, surface_pressure, water_density);
 
         let effective_ceiling = if ceiling > min_od { ceiling } else { min_od };
 
@@ -383,13 +410,11 @@ impl Deco {
         // check if within mod @todo min operational depth
         if let Some(switch_gas) = next_switch_gas {
             //switch gas without ascent if within mod of next deco gas
-            let gas_mod = match switch_gas {
-                BreathingSource::OpenCircuit(mix) => mix.max_operating_depth(1.6),
-                BreathingSource::ClosedCircuit { .. } => Depth::from_meters(1000.0),
-            };
+            let gas_mod = switch_gas.max_operating_depth_at(1.6, surface_pressure, water_density);
 
             // Check MinOD of switch gas too (ensure we don't switch to hypoxic gas)
-            let gas_min_od = switch_gas.min_operating_depth(sim_model.config().min_pp_o2());
+            let gas_min_od =
+                switch_gas.min_operating_depth_at(min_pp_o2, surface_pressure, water_density);
 
             let gas_end = match switch_gas {
                 BreathingSource::OpenCircuit(mix) => mix.equivalent_narcotic_depth(current_depth),
@@ -413,12 +438,13 @@ impl Deco {
         } else {
             // ascent to next gas switch depth if next gas' MOD below ceiling
             if let Some(next_switch_gas) = next_switch_gas {
-                let gas_mod = match next_switch_gas {
-                    BreathingSource::OpenCircuit(mix) => mix.max_operating_depth(1.6),
-                    BreathingSource::ClosedCircuit { .. } => Depth::from_meters(1000.0),
-                };
+                let gas_mod = next_switch_gas.max_operating_depth_at(
+                    1.6,
+                    surface_pressure,
+                    sim_model.config().water_density(),
+                );
 
-                if gas_mod >= effective_ceiling {
+                if gas_mod >= stop_depth {
                     return Ok((
                         Some(DecoAction::AscentToGasSwitchDepth),
                         Some(next_switch_gas),
@@ -521,9 +547,20 @@ impl Deco {
             return Err(DecoCalculationError::EmptyGasList);
         }
         let current_gas = deco_model.dive_state().gas;
-        let current_gas_in_available = gas_mixes.iter().find(|gas_mix| **gas_mix == current_gas);
-        if current_gas_in_available.is_none() {
+        if !gas_mixes.contains(&current_gas) {
             return Err(DecoCalculationError::CurrentGasNotInList);
+        }
+
+        // Prevent MinOD from becoming an infinite "ceiling" if no source is breathable at 0m.
+        let cfg = deco_model.config();
+        let sp = cfg.surface_pressure();
+        let rho = cfg.water_density();
+        let min_pp_o2 = cfg.min_pp_o2();
+        let any_surface_breathable = gas_mixes
+            .iter()
+            .any(|s| s.min_operating_depth_at(min_pp_o2, sp, rho) <= Depth::zero());
+        if !any_surface_breathable {
+            return Err(DecoCalculationError::NoBreathableGasToSurface);
         }
         Ok(())
     }

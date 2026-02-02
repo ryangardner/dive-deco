@@ -1,5 +1,5 @@
 use crate::common::gas::{BreathingSource, GasMix};
-use crate::{BuhlmannModel, Deco, DecoModel, DecoRuntime, Time};
+use crate::{BuhlmannModel, Deco, DecoModel, DecoRuntime, Depth, Time};
 use alloc::vec::Vec;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -75,6 +75,82 @@ impl SetpointController {
             setpoint: target_sp,
             diluent: self.active_diluent,
         }
+    }
+
+    /// Return piecewise-constant BreathingSource segments for a monotonic linear travel.
+    /// Splits once if an auto-switch threshold is crossed.
+    ///
+    /// Usage:
+    ///   for (end_depth, seg_time, src) in controller.travel_segments(d0, d1, dt) {
+    ///       model.record_travel(end_depth, seg_time, &src);
+    ///   }
+    pub fn travel_segments(
+        &mut self,
+        start_depth_m: f64,
+        end_depth_m: f64,
+        total_time: Time,
+    ) -> Vec<(Depth, Time, BreathingSource)> {
+        let mut out: Vec<(Depth, Time, BreathingSource)> = Vec::new();
+
+        if total_time.as_seconds() <= 0.0 {
+            let src = self.tick(end_depth_m);
+            out.push((Depth::from_meters(end_depth_m), Time::zero(), src));
+            return out;
+        }
+
+        // Sync state at start
+        let start_src = self.tick(start_depth_m);
+
+        // Manual override -> no auto switching
+        if matches!(self.state, ControllerState::ManualOverride(_)) {
+            out.push((Depth::from_meters(end_depth_m), total_time, start_src));
+            let _ = self.tick(end_depth_m);
+            return out;
+        }
+
+        let descending = end_depth_m > start_depth_m;
+        let mut split_depth_opt: Option<f64> = None;
+
+        if descending {
+            if matches!(self.state, ControllerState::Low) {
+                if let Some(d) = self.config.switch_depth_descent {
+                    if d > start_depth_m && d < end_depth_m {
+                        split_depth_opt = Some(d);
+                    }
+                }
+            }
+        } else if end_depth_m < start_depth_m {
+            if matches!(self.state, ControllerState::High) {
+                if let Some(d) = self.config.switch_depth_ascent {
+                    if d < start_depth_m && d > end_depth_m {
+                        split_depth_opt = Some(d);
+                    }
+                }
+            }
+        }
+
+        if let Some(split_m) = split_depth_opt {
+            let total_dist = (end_depth_m - start_depth_m).abs();
+            let d1 = (split_m - start_depth_m).abs();
+            let t1_sec = total_time.as_seconds() * (d1 / total_dist);
+            let t2_sec = total_time.as_seconds() - t1_sec;
+
+            let t1 = Time::from_seconds(t1_sec);
+            let t2 = Time::from_seconds(t2_sec);
+
+            // Segment 1: start -> split uses start_src
+            out.push((Depth::from_meters(split_m), t1, start_src));
+
+            // Segment 2: tick at split triggers state change, source updated
+            let split_src = self.tick(split_m);
+            out.push((Depth::from_meters(end_depth_m), t2, split_src));
+            let _ = self.tick(end_depth_m);
+        } else {
+            out.push((Depth::from_meters(end_depth_m), total_time, start_src));
+            let _ = self.tick(end_depth_m);
+        }
+
+        out
     }
 
     fn handle_auto_switch(&mut self, depth: f64) {

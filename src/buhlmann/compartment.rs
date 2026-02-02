@@ -101,12 +101,12 @@ impl Compartment {
         self.n2_ip = n2_inert_pressure;
         self.total_ip = he_inert_pressure + n2_inert_pressure;
 
-        if self.total_ip.is_nan() {
-            println!(
-                "recalculate (Haldane) NaN detected: n2_ip={}, he_ip={}",
-                self.n2_ip, self.he_ip
-            );
-        }
+        debug_assert!(
+            !self.total_ip.is_nan(),
+            "recalculate (Haldane) NaN detected: n2_ip={}, he_ip={}",
+            self.n2_ip,
+            self.he_ip
+        );
 
         // 2. Calculate Weighted Params ONCE
         let weighted_params = self.weighted_zhl_params(self.he_ip, self.n2_ip);
@@ -213,9 +213,12 @@ impl Compartment {
         // Update totals
         self.total_ip = self.n2_ip + self.he_ip;
 
-        if self.total_ip.is_nan() {
-            println!("NaN detected: n2_ip={}, he_ip={}", self.n2_ip, self.he_ip);
-        }
+        debug_assert!(
+            !self.total_ip.is_nan(),
+            "NaN detected: n2_ip={}, he_ip={}",
+            self.n2_ip,
+            self.he_ip
+        );
 
         // Calling code is expected to call recalculate() with the final p_amb after travel
         // to correctly update min_tolerable_pressure and m_value_calc.
