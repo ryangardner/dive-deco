@@ -1,13 +1,13 @@
 use dive_deco::{
-    BuhlmannConfig, BuhlmannModel, CeilingType, DecoModel, DecoRuntime, DecoStage, DecoStageType,
-    Depth, Gas, Time,
+    BreathingSource, BuhlmannConfig, BuhlmannModel, CeilingType, DecoModel, DecoRuntime, DecoStage,
+    DecoStageType, DecoStopFormatting, Depth, Gas, Time,
 };
 
 pub mod fixtures;
 
 #[test]
 fn test_deco_ascent_no_deco() {
-    let air = fixtures::gas_air();
+    let air = BreathingSource::OpenCircuit(fixtures::gas_air());
     let mut model = fixtures::model_default();
     model.record(Depth::from_meters(20.), Time::from_minutes(5.), &air);
 
@@ -20,7 +20,7 @@ fn test_deco_ascent_no_deco() {
 
 #[test]
 fn test_deco_single_gas() {
-    let air = fixtures::gas_air();
+    let air = BreathingSource::OpenCircuit(fixtures::gas_air());
     let mut model = BuhlmannModel::new(BuhlmannConfig::default().with_deco_ascent_rate(9.));
     model.record(Depth::from_meters(40.), Time::from_minutes(20.), &air);
 
@@ -80,8 +80,8 @@ fn test_deco_single_gas() {
 fn test_deco_multi_gas() {
     let mut model = BuhlmannModel::new(BuhlmannConfig::default().with_deco_ascent_rate(9.));
 
-    let air = Gas::new(0.21, 0.);
-    let ean_50 = Gas::new(0.50, 0.);
+    let air = BreathingSource::OpenCircuit(Gas::new(0.21, 0.));
+    let ean_50 = BreathingSource::OpenCircuit(Gas::new(0.50, 0.));
 
     model.record(Depth::from_meters(40.), Time::from_minutes(20.), &air);
 
@@ -152,8 +152,8 @@ fn test_deco_multi_gas() {
 #[test]
 fn test_deco_with_deco_mod_at_bottom() {
     let mut model = BuhlmannModel::new(BuhlmannConfig::default().with_deco_ascent_rate(9.));
-    let air = Gas::air();
-    let ean_36 = Gas::new(0.36, 0.);
+    let air = BreathingSource::OpenCircuit(Gas::air());
+    let ean_36 = BreathingSource::OpenCircuit(Gas::new(0.36, 0.));
 
     model.record(Depth::from_meters(30.), Time::from_minutes(30.), &air);
 
@@ -202,8 +202,8 @@ fn test_deco_with_deco_mod_at_bottom() {
 #[test]
 fn test_tts_delta() {
     let mut model = fixtures::model_gf((30, 70));
-    let air = Gas::air();
-    let ean_50 = Gas::new(0.5, 0.);
+    let air = BreathingSource::OpenCircuit(Gas::air());
+    let ean_50 = BreathingSource::OpenCircuit(Gas::new(0.5, 0.));
     let gas_mixes = vec![air, ean_50];
     model.record(Depth::from_meters(40.), Time::from_minutes(20.), &air);
     let deco_1 = model.deco(gas_mixes.clone()).unwrap();
@@ -215,8 +215,8 @@ fn test_tts_delta() {
 
 #[test]
 fn test_runtime_on_missed_stop() {
-    let air = Gas::air();
-    let ean_50 = Gas::new(0.50, 0.);
+    let air = BreathingSource::OpenCircuit(Gas::air());
+    let ean_50 = BreathingSource::OpenCircuit(Gas::new(0.50, 0.));
     let available_gas_mixes = vec![air, ean_50];
 
     let configs = vec![
@@ -263,9 +263,9 @@ fn test_deco_runtime_integrity() {
         .with_gradient_factors(30, 70)
         .with_ceiling_type(CeilingType::Adaptive);
     let mut model = BuhlmannModel::new(config);
-    let air = Gas::air();
-    let ean_50 = Gas::new(0.50, 0.);
-    let oxygen = Gas::new(1., 0.);
+    let air = BreathingSource::OpenCircuit(Gas::air());
+    let ean_50 = BreathingSource::OpenCircuit(Gas::new(0.50, 0.));
+    let oxygen = BreathingSource::OpenCircuit(Gas::new(1., 0.));
     model.record(Depth::from_meters(40.), Time::from_minutes(20.), &air);
 
     let deco_runtime = model.deco(vec![air, ean_50, oxygen]).unwrap();
@@ -338,6 +338,67 @@ fn test_deco_runtime_integrity() {
         }
         b
     });
+}
+
+#[test]
+fn test_deco_formatting_modes() {
+    let air = BreathingSource::OpenCircuit(Gas::air());
+    let mut model_base = BuhlmannModel::new(BuhlmannConfig::default());
+    // Dive to 40m for 25 mins -> generates deco
+    model_base.record(Depth::from_meters(40.), Time::from_minutes(25.), &air);
+
+    // 1. Metric (Default) - expect 3m stops
+    let deco_metric = model_base.deco(vec![air]).unwrap();
+    let first_stop_metric = get_first_deco_stop_depth(deco_metric).unwrap();
+    assert!((first_stop_metric.as_meters() % 3.0).abs() < 1e-6);
+
+    // 2. Imperial - expect 10ft stops
+    let config_imperial = model_base
+        .config()
+        .with_stop_formatting(DecoStopFormatting::Imperial);
+    let model_imperial = BuhlmannModel::new(config_imperial);
+    // Copy state (simplification for test)
+    let mut model_imperial_ready = model_imperial;
+    model_imperial_ready.record(Depth::from_meters(40.), Time::from_minutes(25.), &air);
+    let deco_imperial = model_imperial_ready.deco(vec![air]).unwrap();
+    let first_stop_imperial = get_first_deco_stop_depth(deco_imperial).unwrap();
+    assert!((first_stop_imperial.as_feet() % 10.0).abs() < 1e-6);
+
+    // 3. Continuous - expect exact ceiling
+    let config_continuous = model_base
+        .config()
+        .with_stop_formatting(DecoStopFormatting::Continuous);
+    let model_continuous = BuhlmannModel::new(config_continuous);
+    let mut model_continuous_ready = model_continuous;
+    model_continuous_ready.record(Depth::from_meters(40.), Time::from_minutes(25.), &air);
+    let deco_continuous = model_continuous_ready.deco(vec![air]).unwrap();
+    let first_stop_continuous = get_first_deco_stop_depth(deco_continuous).unwrap();
+
+    // Exact ceiling is unlikely to be exactly on a 3m/10ft boundary
+    assert!((first_stop_continuous.as_meters() % 3.0).abs() > 1e-3);
+    assert!((first_stop_continuous.as_feet() % 10.0).abs() > 1e-3);
+}
+
+#[test]
+fn test_deco_last_stop_depth() {
+    let air = BreathingSource::OpenCircuit(Gas::air());
+
+    // Set last stop to 6m
+    let config = BuhlmannConfig::default().with_last_stop_depth(Depth::from_meters(6.0));
+    let mut model = BuhlmannModel::new(config);
+    model.record(Depth::from_meters(30.), Time::from_minutes(40.), &air);
+
+    let deco = model.deco(vec![air]).unwrap();
+
+    // The very last deco stop (before ascent to surface) should be at 6m
+    let deco_stops: Vec<_> = deco
+        .deco_stages
+        .iter()
+        .filter(|s| s.stage_type == DecoStageType::DecoStop)
+        .collect();
+
+    let last_stop = deco_stops.last().unwrap();
+    assert_eq!(last_stop.start_depth.as_meters(), 6.0);
 }
 
 fn get_first_deco_stop_depth(deco: DecoRuntime) -> Option<Depth> {

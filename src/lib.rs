@@ -9,9 +9,10 @@ pub use buhlmann::{
 };
 
 pub use common::{
-    CeilingType, Deco, DecoCalculationError, DecoModel, DecoRuntime, DecoStage, DecoStageType,
-    Depth, DepthType, DiveState, Gas, GradientFactors, NDLType, Pressure, RecordData, Sim, Time,
-    Unit, Units,
+    BreathingSource, CeilingType, Deco, DecoCalculationError, DecoModel, DecoRuntime, DecoStage,
+    DecoStageType, DecoStopFormatting, Depth, DepthType, DiveComputer, DiveMode, DiveState, Gas,
+    GasMix, GradientFactors, NDLType, Pressure, RecordData, SetpointConfig, SetpointController,
+    Sim, Time, Unit, Units,
 };
 
 // Re-export Vec and vec macro from alloc for convenience
