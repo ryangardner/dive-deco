@@ -21,7 +21,7 @@ fn test_ccr_breathing_source_pressures() {
     // Diluent inert fraction = 0.35 (He) + 0.44 (N2) = 0.79
     // He ratio = 0.35 / 0.79 = 0.443...
     // N2 ratio = 0.44 / 0.79 = 0.556...
-    let inert_total = diluent.fraction_he + diluent.fraction_n2();
+    let inert_total = diluent.fraction_he() + diluent.fraction_n2();
     let expected_he = (0.35 / inert_total) * 2.7;
     let expected_n2 = (0.44 / inert_total) * 2.7;
 

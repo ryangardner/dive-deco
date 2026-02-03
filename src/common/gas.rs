@@ -12,11 +12,12 @@ const ALVEOLI_WATER_VAPOR_PRESSURE: f32 = 0.0627;
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct GasMix {
-    pub fraction_o2: f32,
-    pub fraction_he: f32,
-    pub fraction_n2: f32,
+    fraction_o2: f32,
+    fraction_he: f32,
+    fraction_n2: f32,
 }
 
+#[deprecated(note = "Use GasMix instead")]
 pub type Gas = GasMix; // Compatibility alias, though we will deprecate usage
 
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
@@ -81,6 +82,14 @@ impl GasMix {
 
     pub fn fraction_n2(&self) -> f32 {
         self.fraction_n2
+    }
+
+    pub fn fraction_o2(&self) -> f32 {
+        self.fraction_o2
+    }
+
+    pub fn fraction_he(&self) -> f32 {
+        self.fraction_he
     }
 
     pub fn id(&self) -> String {
@@ -399,16 +408,16 @@ mod tests {
     #[test]
     fn test_valid_gas_air() {
         let air = GasMix::new(0.21, 0.);
-        assert_eq!(air.fraction_o2, 0.21);
+        assert_eq!(air.fraction_o2(), 0.21);
         assert_eq!(air.fraction_n2(), 0.79);
-        assert_eq!(air.fraction_he, 0.);
+        assert_eq!(air.fraction_he(), 0.);
     }
 
     #[test]
     fn test_valid_gas_tmx() {
         let tmx = GasMix::new(0.18, 0.35);
-        assert_eq!(tmx.fraction_o2, 0.18);
-        assert_eq!(tmx.fraction_he, 0.35);
+        assert_eq!(tmx.fraction_o2(), 0.18);
+        assert_eq!(tmx.fraction_he(), 0.35);
         assert_eq!(tmx.fraction_n2(), 0.47);
     }
 

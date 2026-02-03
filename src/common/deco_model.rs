@@ -37,6 +37,8 @@ pub trait DecoModelConfig {
     fn min_pp_o2(&self) -> Pressure;
     fn gas_switch_duration(&self) -> Time;
     fn switch_at_stop_only(&self) -> bool;
+    fn max_end_depth(&self) -> Depth;
+    fn deco_stop_increment(&self) -> Depth;
 }
 
 #[derive(Debug, Clone)]

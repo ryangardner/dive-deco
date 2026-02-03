@@ -1,17 +1,13 @@
 use alloc::vec;
 use alloc::vec::Vec;
-use core::{cmp::Ordering, fmt};
+use core::fmt;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 use crate::common::BreathingSource;
-use crate::{DecoModel, Depth, DepthType, Time};
+use crate::{DecoModel, Depth, Time};
 
 use super::{ceil, DecoModelConfig, DecoStopFormatting, DiveState, MbarPressure, Sim};
-
-// @todo move to model config
-const DEFAULT_CEILING_WINDOW: DepthType = 3.;
-const DEFAULT_MAX_END_DEPTH: DepthType = 30.;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -147,9 +143,8 @@ impl Deco {
                     DecoCalculationError::MissedDecoStopViolation => {
                         sim_model.record(
                             self.deco_stop_depth(
+                                &sim_model.config(),
                                 ceiling,
-                                sim_model.config().stop_formatting(),
-                                sim_model.config().last_stop_depth(),
                                 pre_stage_gas.min_operating_depth(sim_model.config().min_pp_o2()),
                             ),
                             Time::zero(),
@@ -177,9 +172,8 @@ impl Deco {
                         DecoAction::AscentToCeil => {
                             sim_model.record_travel_with_rate(
                                 self.deco_stop_depth(
+                                    &sim_model.config(),
                                     ceiling,
-                                    sim_model.config().stop_formatting(),
-                                    sim_model.config().last_stop_depth(),
                                     pre_stage_gas
                                         .min_operating_depth(sim_model.config().min_pp_o2()),
                                 ),
@@ -199,67 +193,65 @@ impl Deco {
 
                         // ascent to min depth with gas switch on next deco gas maximum operating depth
                         DecoAction::AscentToGasSwitchDepth => {
-                            // @todo unwrap and handler err
-                            if let Some(next_switch_gas) = next_switch_gas {
-                                // travel to MOD (using 1.6 ppo2 limit default)
-                                // We need to check if the source SUPPORTS MOD calculation (OC)
-                                // For CCR, MOD is depth limit, usually 1.6 setpoint limit or whatever
-                                let switch_gas_mod = next_switch_gas.max_operating_depth_at(
-                                    1.6,
-                                    sim_model.config().surface_pressure(),
-                                    sim_model.config().water_density(),
+                            let next_switch_gas = next_switch_gas.expect("Gas switch action requires a candidate gas");
+                            
+                            // travel to MOD (using 1.6 ppo2 limit default)
+                            // We need to check if the source SUPPORTS MOD calculation (OC)
+                            // For CCR, MOD is depth limit, usually 1.6 setpoint limit or whatever
+                            let switch_gas_mod = next_switch_gas.max_operating_depth_at(
+                                1.6,
+                                sim_model.config().surface_pressure(),
+                                sim_model.config().water_density(),
+                            );
+
+                            sim_model.record_travel_with_rate(
+                                switch_gas_mod,
+                                ascent_rate,
+                                &pre_stage_gas,
+                            );
+                            let DiveState {
+                                depth: post_ascent_depth,
+                                time: post_ascent_time,
+                                ..
+                            } = sim_model.dive_state();
+                            deco_stages.push(DecoStage {
+                                stage_type: DecoStageType::Ascent,
+                                start_depth: pre_stage_depth,
+                                end_depth: post_ascent_depth,
+                                duration: post_ascent_time - pre_stage_time,
+                                gas: pre_stage_gas,
+                            });
+
+                            // switch gas with duration
+                            let switch_duration = sim_model.config().gas_switch_duration();
+                            if switch_duration.as_seconds() > 0.0 {
+                                let half_time = switch_duration / 2.0;
+                                // First half: Wait at depth on OLD gas
+                                sim_model.record(post_ascent_depth, half_time, &pre_stage_gas);
+                                // Second half: Wait at depth on NEW gas
+                                sim_model.record(post_ascent_depth, half_time, &next_switch_gas);
+                            } else {
+                                // Instant switch (legacy behavior)
+                                sim_model.record(
+                                    sim_model.dive_state().depth,
+                                    Time::zero(),
+                                    &next_switch_gas,
                                 );
-
-                                sim_model.record_travel_with_rate(
-                                    switch_gas_mod,
-                                    ascent_rate,
-                                    &pre_stage_gas,
-                                );
-                                let DiveState {
-                                    depth: post_ascent_depth,
-                                    time: post_ascent_time,
-                                    ..
-                                } = sim_model.dive_state();
-                                deco_stages.push(DecoStage {
-                                    stage_type: DecoStageType::Ascent,
-                                    start_depth: pre_stage_depth,
-                                    end_depth: post_ascent_depth,
-                                    duration: post_ascent_time - pre_stage_time,
-                                    gas: pre_stage_gas,
-                                });
-
-                                // switch gas with duration
-                                let switch_duration = sim_model.config().gas_switch_duration();
-                                if switch_duration.as_seconds() > 0.0 {
-                                    let half_time = switch_duration / 2.0;
-                                    // First half: Wait at depth on OLD gas
-                                    sim_model.record(post_ascent_depth, half_time, &pre_stage_gas);
-                                    // Second half: Wait at depth on NEW gas
-                                    sim_model.record(post_ascent_depth, half_time, &next_switch_gas);
-                                } else {
-                                    // Instant switch (legacy behavior)
-                                    sim_model.record(
-                                        sim_model.dive_state().depth,
-                                        Time::zero(),
-                                        &next_switch_gas,
-                                    );
-                                }
-
-                                // @todo configurable oxygen window stop
-                                let post_switch_state = sim_model.dive_state();
-                                deco_stages.push(DecoStage {
-                                    stage_type: DecoStageType::GasSwitch,
-                                    start_depth: post_ascent_depth,
-                                    end_depth: post_switch_state.depth,
-                                    duration: switch_duration,
-                                    gas: next_switch_gas,
-                                });
                             }
+
+                            let post_switch_state = sim_model.dive_state();
+                            deco_stages.push(DecoStage {
+                                stage_type: DecoStageType::GasSwitch,
+                                start_depth: post_ascent_depth,
+                                end_depth: post_switch_state.depth,
+                                duration: switch_duration,
+                                gas: next_switch_gas,
+                            });
                         }
 
                         // switch gas without ascent
                         DecoAction::SwitchGas => {
-                            let switch_gas = next_switch_gas.unwrap();
+                            let switch_gas = next_switch_gas.expect("Gas switch action requires a candidate gas");
                             let switch_duration = sim_model.config().gas_switch_duration();
 
                             if switch_duration.as_seconds() > 0.0 {
@@ -284,9 +276,8 @@ impl Deco {
                         // decompression stop
                         DecoAction::Stop => {
                             let stop_depth = self.deco_stop_depth(
+                                &sim_model.config(),
                                 ceiling,
-                                sim_model.config().stop_formatting(),
-                                sim_model.config().last_stop_depth(),
                                 pre_stage_gas.min_operating_depth(sim_model.config().min_pp_o2()),
                             );
                             let stop_duration =
@@ -294,7 +285,6 @@ impl Deco {
 
                             sim_model.record(pre_stage_depth, stop_duration, &pre_stage_gas);
                             let sim_state = sim_model.dive_state();
-                            // @todo dedupe here on deco instead of of add deco
                             deco_stages.push(DecoStage {
                                 stage_type: DecoStageType::DecoStop,
                                 start_depth: stop_depth,
@@ -389,9 +379,8 @@ impl Deco {
         // We treat everything as "Greater" if effective_ceiling > 0
         // check if deco violation (or MinOD violation)
         let stop_depth = self.deco_stop_depth(
+            &sim_model.config(),
             ceiling,
-            sim_model.config().stop_formatting(),
-            sim_model.config().last_stop_depth(),
             min_od,
         );
 
@@ -407,7 +396,7 @@ impl Deco {
             sim_model.config().water_density(),
         );
 
-        // check if within mod @todo min operational depth
+        // check if within mod
         if let Some(switch_gas) = next_switch_gas {
             //switch gas without ascent if within mod of next deco gas
             let gas_mod = switch_gas.max_operating_depth_at(1.6, surface_pressure, water_density);
@@ -426,7 +415,7 @@ impl Deco {
             if (switch_gas != current_gas)
                 && (current_depth <= gas_mod)
                 && (current_depth >= gas_min_od)
-                && (gas_end <= Depth::from_meters(DEFAULT_MAX_END_DEPTH))
+                && (gas_end <= sim_model.config().max_end_depth())
             {
                 // If switch_at_stop_only is enabled, only switch if we are at a stop
                 if !sim_model.config().switch_at_stop_only() || current_depth == stop_depth {
@@ -500,11 +489,13 @@ impl Deco {
     // round ceiling up to the bottom of deco window and respect MinOD
     fn deco_stop_depth(
         &self,
+        config: &impl DecoModelConfig,
         ceiling: Depth,
-        formatting: DecoStopFormatting,
-        last_stop_depth: Depth,
         min_operating_depth: Depth,
     ) -> Depth {
+        let formatting = config.stop_formatting();
+        let last_stop_depth = config.last_stop_depth();
+
         // Enforce MinOD floor
         let effective_ceiling = if ceiling > min_operating_depth {
             ceiling
@@ -520,8 +511,9 @@ impl Deco {
         // Calculate raw stop depth based on formatting
         let calculated_stop = match formatting {
             DecoStopFormatting::Metric => {
-                // Round up to nearest 3m
-                Depth::from_meters(ceil(effective_ceiling.as_meters() / 3.0) * 3.0)
+                // Round up to nearest configured increment (usually 3m)
+                let increment = config.deco_stop_increment().as_meters();
+                Depth::from_meters(ceil(effective_ceiling.as_meters() / increment) * increment)
             }
             DecoStopFormatting::Imperial => {
                 // Round up to nearest 10ft (3.048m)
@@ -601,9 +593,8 @@ impl Deco {
                             // is STILL the same as current_stop_depth.
                             let ceiling = sim.ceiling();
                             let new_stop_depth = self.deco_stop_depth(
+                                &sim.config(),
                                 ceiling,
-                                sim.config().stop_formatting(),
-                                sim.config().last_stop_depth(),
                                 sim.dive_state()
                                     .gas
                                     .min_operating_depth(sim.config().min_pp_o2()),
@@ -644,24 +635,24 @@ mod tests {
 
     #[test]
     fn test_ceiling_rounding() {
-        let test_cases: Vec<(Depth, Depth)> = vec![
-            (Depth::from_meters(0.), Depth::from_meters(0.)),
-            (Depth::from_meters(2.), Depth::from_meters(3.)),
-            (Depth::from_meters(2.999), Depth::from_meters(3.)),
-            (Depth::from_meters(3.), Depth::from_meters(3.)),
-            (Depth::from_meters(3.00001), Depth::from_meters(6.)),
-            (Depth::from_meters(12.), Depth::from_meters(12.)),
+        let test_cases: Vec<(f32, f32)> = vec![
+            (0., 0.),
+            (2., 3.),
+            (2.999, 3.),
+            (3., 3.),
+            (3.00001, 6.),
+            (12., 12.),
         ];
         let deco = Deco::default();
+        let config = BuhlmannConfig::default();
         for case in test_cases.into_iter() {
             let (input_depth, expected_depth) = case;
             let res = deco.deco_stop_depth(
-                input_depth,
-                DecoStopFormatting::Metric,
-                Depth::from_meters(3.0),
+                &config,
+                Depth::from_meters(input_depth),
                 Depth::zero(),
             );
-            assert_eq!(res, expected_depth);
+            assert_eq!(res, Depth::from_meters(expected_depth));
         }
     }
 

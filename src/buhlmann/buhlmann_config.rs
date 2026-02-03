@@ -32,6 +32,8 @@ pub struct BuhlmannConfig {
     pub min_pp_o2: Pressure,
     pub gas_switch_duration: Time,
     pub switch_at_stop_only: bool,
+    pub max_end_depth: Depth,
+    pub deco_stop_increment: Depth,
 }
 
 impl BuhlmannConfig {
@@ -108,6 +110,16 @@ impl BuhlmannConfig {
         self.switch_at_stop_only = switch_at_stop_only;
         self
     }
+
+    pub fn with_max_end_depth(mut self, depth: Depth) -> Self {
+        self.max_end_depth = depth;
+        self
+    }
+
+    pub fn with_deco_stop_increment(mut self, depth: Depth) -> Self {
+        self.deco_stop_increment = depth;
+        self
+    }
 }
 
 impl Default for BuhlmannConfig {
@@ -126,6 +138,8 @@ impl Default for BuhlmannConfig {
             min_pp_o2: 0.18,
             gas_switch_duration: Time::from_minutes(2.0),
             switch_at_stop_only: false,
+            max_end_depth: Depth::from_meters(30.0),
+            deco_stop_increment: Depth::from_meters(3.0),
         }
     }
 }
@@ -185,6 +199,14 @@ impl DecoModelConfig for BuhlmannConfig {
 
     fn switch_at_stop_only(&self) -> bool {
         self.switch_at_stop_only
+    }
+
+    fn max_end_depth(&self) -> Depth {
+        self.max_end_depth
+    }
+
+    fn deco_stop_increment(&self) -> Depth {
+        self.deco_stop_increment
     }
 }
 

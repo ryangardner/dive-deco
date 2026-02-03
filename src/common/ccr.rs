@@ -310,7 +310,7 @@ impl DiveComputer {
                 g.partial_pressures(p_amb).o2 <= 1.61
             })
             // Find the richest (highest O2) gas available at this depth
-            .max_by(|a, b| a.fraction_o2.partial_cmp(&b.fraction_o2).unwrap())
+            .max_by(|a, b| a.fraction_o2().partial_cmp(&b.fraction_o2()).unwrap())
             .unwrap_or(&self.diluent_supply);
 
         // Record the switch event in the simulation

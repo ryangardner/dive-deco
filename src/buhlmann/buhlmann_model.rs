@@ -108,7 +108,6 @@ impl DecoModel for BuhlmannModel {
     }
 
     /// model travel between depths in 1s intervals
-    // @todo: Schreiner equation instead of Haldane to avoid imprecise intervals
     fn record_travel(&mut self, target_depth: Depth, time: Time, gas: &BreathingSource) {
         self.validate_depth(target_depth);
         let start_depth = self.state.depth;
@@ -174,7 +173,6 @@ impl DecoModel for BuhlmannModel {
     fn record_travel_with_rate(
         &mut self,
         target_depth: Depth,
-        // @todo ascent rate units
         rate: AscentRatePerMinute,
         gas: &BreathingSource,
     ) {
