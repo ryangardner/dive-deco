@@ -3,80 +3,80 @@
 #[cfg(feature = "no-std")]
 use libm;
 
-/// Absolute value for f64
+/// Absolute value for f32
 #[inline]
-pub fn abs(val: f64) -> f64 {
+pub fn abs(val: f32) -> f32 {
     #[cfg(not(feature = "no-std"))]
     {
         val.abs()
     }
     #[cfg(feature = "no-std")]
     {
-        libm::fabs(val)
+        libm::fabsf(val)
     }
 }
 
-/// Ceiling function for f64
+/// Ceiling function for f32
 #[inline]
-pub fn ceil(val: f64) -> f64 {
+pub fn ceil(val: f32) -> f32 {
     #[cfg(not(feature = "no-std"))]
     {
         val.ceil()
     }
     #[cfg(feature = "no-std")]
     {
-        libm::ceil(val)
+        libm::ceilf(val)
     }
 }
 
-/// Power function for f64
+/// Power function for f32
 #[inline]
-pub fn powf(base: f64, exp: f64) -> f64 {
+pub fn powf(base: f32, exp: f32) -> f32 {
     #[cfg(not(feature = "no-std"))]
     {
         base.powf(exp)
     }
     #[cfg(feature = "no-std")]
     {
-        libm::pow(base, exp)
+        libm::powf(base, exp)
     }
 }
 
-/// Simple e^x wrapper
+/// Simple e^x wrapper for f32
 #[inline]
-pub fn exp(exponent: f64) -> f64 {
+pub fn exp(exponent: f32) -> f32 {
     #[cfg(not(feature = "no-std"))]
     {
         exponent.exp()
     }
     #[cfg(feature = "no-std")]
     {
-        libm::exp(exponent)
+        libm::expf(exponent)
     }
 }
 
-/// Simple ln(x) wrapper
+/// Simple ln(x) wrapper for f32
 #[inline]
-pub fn ln(val: f64) -> f64 {
+pub fn ln(val: f32) -> f32 {
     #[cfg(not(feature = "no-std"))]
     {
         val.ln()
     }
     #[cfg(feature = "no-std")]
     {
-        libm::log(val)
+        libm::logf(val)
     }
 }
 
-/// Round function for f64
+/// Round function for f32
 #[inline]
-pub fn round(val: f64) -> f64 {
+pub fn round(val: f32) -> f32 {
     #[cfg(not(feature = "no-std"))]
     {
         val.round()
     }
     #[cfg(feature = "no-std")]
     {
-        libm::round(val)
+        libm::roundf(val)
     }
 }

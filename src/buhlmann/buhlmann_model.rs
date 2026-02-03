@@ -215,11 +215,11 @@ impl DecoModel for BuhlmannModel {
         }
         // At this point, low is safe and high is in deco (or high == low + 1)
         // Verify that 'low' minutes keeps us within NDL
-        else if self.check_ndl_for(Time::from_minutes(low)) {
-            Time::from_minutes(low)
+        else if self.check_ndl_for(Time::from_minutes(low as f32)) {
+            Time::from_minutes(low as f32)
         } else {
             // Edge case: even 'low' puts us in deco
-            Time::from_minutes(0)
+            Time::from_minutes(0.0)
         }
     }
 
@@ -352,7 +352,7 @@ impl BuhlmannModel {
             self.config.surface_pressure,
             self.config.water_density,
         );
-        let p_surf = self.config.surface_pressure as f64 / 1000.0;
+        let p_surf = self.config.surface_pressure as f32 / 1000.0f32;
 
         for comp in self.compartments.iter() {
             let Supersaturation { gf_99, gf_surf } = comp.supersaturation(p_amb, p_surf);
@@ -521,10 +521,10 @@ impl BuhlmannModel {
             Some(gf_low_depth) => gf_low_depth,
             None => {
                 // Direct calculation for gf_low_depth
-                let surface_pressure_bar = self.config.surface_pressure as f64 / 1000.0;
-                let gf_low_fraction = gf.0 as f64 / 100.0; // gf.0 is gf_low
+                let surface_pressure_bar = self.config.surface_pressure as f32 / 1000.0;
+                let gf_low_fraction = gf.0 as f32 / 100.0; // gf.0 is gf_low
 
-                let mut max_calculated_depth_m = 0.0f64;
+                let mut max_calculated_depth_m = 0.0f32;
 
                 for comp in self.compartments.iter() {
                     let total_ip = comp.total_ip;
@@ -559,8 +559,8 @@ impl BuhlmannModel {
         depth: Depth,
     ) -> GradientFactor {
         let (gf_low, gf_high) = gf;
-        let slope_point: f64 = gf_high as f64
-            - (((gf_high - gf_low) as f64) / gf_low_depth.as_meters()) * depth.as_meters();
+        let slope_point: f32 = gf_high as f32
+            - (((gf_high - gf_low) as f32) / gf_low_depth.as_meters()) * depth.as_meters();
 
         slope_point as u8
     }
@@ -627,11 +627,11 @@ impl BuhlmannModel {
         if !self.is_sim() {
             let total_sec = time.as_seconds();
             let whole_steps = total_sec.floor() as usize;
-            let rem = total_sec - (whole_steps as f64);
+            let rem = total_sec - (whole_steps as f32);
 
             if whole_steps > 0 {
                 let delta =
-                    (end_depth.as_meters() - start_depth.as_meters()) / (whole_steps as f64);
+                    (end_depth.as_meters() - start_depth.as_meters()) / (whole_steps as f32);
                 let mut d_m = start_depth.as_meters();
                 for _ in 0..whole_steps {
                     d_m += delta;

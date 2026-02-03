@@ -8,16 +8,16 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct SetpointConfig {
-    pub low_setpoint: f64,
-    pub high_setpoint: f64,
+    pub low_setpoint: f32,
+    pub high_setpoint: f32,
 
     /// Depth to auto-switch Low -> High (Descent).
     /// If None, manual switching only.
-    pub switch_depth_descent: Option<f64>,
+    pub switch_depth_descent: Option<f32>,
 
     /// Depth to auto-switch High -> Low (Ascent).
     /// If None, the controller maintains High setpoint until surface/manual override.
-    pub switch_depth_ascent: Option<f64>,
+    pub switch_depth_ascent: Option<f32>,
 }
 
 impl Default for SetpointConfig {
@@ -38,7 +38,7 @@ pub enum ControllerState {
     Low,
     High,
     /// User has manually overridden the auto logic.
-    ManualOverride(f64),
+    ManualOverride(f32),
 }
 
 #[derive(Debug, Clone)]
@@ -62,7 +62,7 @@ impl SetpointController {
 
     /// Updates the state based on current depth and returns the active breathing source.
     /// This should be called every time step of the dive simulation.
-    pub fn tick(&mut self, current_depth: f64) -> BreathingSource {
+    pub fn tick(&mut self, current_depth: f32) -> BreathingSource {
         self.handle_auto_switch(current_depth);
 
         let target_sp = match self.state {
@@ -86,8 +86,8 @@ impl SetpointController {
     ///   }
     pub fn travel_segments(
         &mut self,
-        start_depth_m: f64,
-        end_depth_m: f64,
+        start_depth_m: f32,
+        end_depth_m: f32,
         total_time: Time,
     ) -> Vec<(Depth, Time, BreathingSource)> {
         let mut out: Vec<(Depth, Time, BreathingSource)> = Vec::new();
@@ -109,7 +109,7 @@ impl SetpointController {
         }
 
         let descending = end_depth_m > start_depth_m;
-        let mut split_depth_opt: Option<f64> = None;
+        let mut split_depth_opt: Option<f32> = None;
 
         if descending {
             if matches!(self.state, ControllerState::Low) {
@@ -153,7 +153,7 @@ impl SetpointController {
         out
     }
 
-    fn handle_auto_switch(&mut self, depth: f64) {
+    fn handle_auto_switch(&mut self, depth: f32) {
         match self.state {
             ControllerState::Low => {
                 // Only switch if descent switching is enabled AND we are deep enough
@@ -179,7 +179,7 @@ impl SetpointController {
 
     /// Manual intervention: "Persisting diluent usage during setpoint switches"
     /// The user changes the setpoint, but the diluent remains the same.
-    pub fn set_manual_setpoint(&mut self, sp: f64) {
+    pub fn set_manual_setpoint(&mut self, sp: f32) {
         self.state = ControllerState::ManualOverride(sp);
     }
 
@@ -248,7 +248,7 @@ impl DiveComputer {
         }
     }
 
-    pub fn step(&mut self, depth: f64) -> BreathingSource {
+    pub fn step(&mut self, depth: f32) -> BreathingSource {
         // 1. Tick the CCR controller regardless of mode (it tracks depth)
         // This ensures that if we return to the loop, it's in the correct state (High/Low)
         // for the current depth.

@@ -17,9 +17,9 @@ pub struct Compartment {
     // tissue number
     pub no: u8,
     // decay constant k for He (ln(2)/half_time)
-    pub he_k: f64,
+    pub he_k: f32,
     // decay constant k for N2 (ln(2)/half_time)
-    pub n2_k: f64,
+    pub n2_k: f32,
     // tolerable tissue ambient pressure
     pub min_tolerable_amb_pressure: Pressure,
     // helium saturation pressure
@@ -41,8 +41,8 @@ pub struct Compartment {
 #[derive(Debug, PartialEq, Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Supersaturation {
-    pub gf_99: f64,
-    pub gf_surf: f64,
+    pub gf_99: f32,
+    pub gf_surf: f32,
 }
 
 impl Compartment {
@@ -59,7 +59,7 @@ impl Compartment {
         let he_ip = init_gas_compound_pressures.he;
 
         let (n2_half_time, _, _, he_half_time, ..) = params;
-        let ln2 = 0.69314718056;
+        let ln2 = 0.69314718056f32;
         let n2_k = ln2 / n2_half_time;
         let he_k = ln2 / he_half_time;
 
@@ -200,7 +200,7 @@ impl Compartment {
         p_alv_end_n2: Pressure,
         p_alv_start_he: Pressure,
         p_alv_end_he: Pressure,
-        time_min: f64,
+        time_min: f32,
     ) {
         // N2
         let n2_r = (p_alv_end_n2 - p_alv_start_n2) / time_min;
@@ -226,12 +226,12 @@ impl Compartment {
 
     fn schreiner_equation(
         &self,
-        p_i_0: f64, // Initial inspired pressure
-        r: f64,     // Rate of change of inspired pressure
-        t: f64,     // Time in minutes
-        k: f64,     // Decay constant
-        p_t_0: f64, // Initial tissue pressure
-    ) -> f64 {
+        p_i_0: f32, // Initial inspired pressure
+        r: f32,     // Rate of change of inspired pressure
+        t: f32,     // Time in minutes
+        k: f32,     // Decay constant
+        p_t_0: f32, // Initial tissue pressure
+    ) -> f32 {
         if abs(r) < 1e-9 {
             // Fallback to Haldane if rate is effectively zero (constant depth)
             // P = P_i + (P_old - P_i) * e^(-k * t)
@@ -247,7 +247,7 @@ impl Compartment {
         inert_gas: InertGas,
         gas_inspired_p: Pressure,
         time: Time,
-        k: f64,
+        k: f32,
     ) -> Pressure {
         let inert_gas_load = match inert_gas {
             InertGas::Helium => self.he_ip,
@@ -256,13 +256,13 @@ impl Compartment {
 
         let t_sec = time.as_seconds();
         let idx = (self.no - 1) as usize;
-        let p_delta = if (t_sec - 1.0).abs() < f64::EPSILON {
+        let p_delta = if (t_sec - 1.0).abs() < f32::EPSILON {
             // Optimization: LUT for 1s
             match inert_gas {
                 InertGas::Nitrogen => N2_DECAY_1S[idx],
                 InertGas::Helium => HE_DECAY_1S[idx],
             }
-        } else if (t_sec - 60.0).abs() < f64::EPSILON {
+        } else if (t_sec - 60.0).abs() < f32::EPSILON {
             // Optimization: LUT for 60s
             match inert_gas {
                 InertGas::Nitrogen => N2_DECAY_60S[idx],
@@ -296,7 +296,7 @@ impl Compartment {
             self.params;
 
         // OPTIMIZATION: Fast path for Air/Nitrox (No Helium)
-        if he_pp <= f64::EPSILON {
+        if he_pp <= f32::EPSILON {
             return (n2_half_time, n2_a_coeff, n2_b_coeff);
         }
 
@@ -326,7 +326,7 @@ impl Compartment {
         max_gf: GradientFactor,
     ) -> (ZHLParam, ZHLParam, ZHLParam) {
         let (half_time, a_coeff, b_coeff) = params;
-        let max_gf_fraction = max_gf as f64 / 100.;
+        let max_gf_fraction = max_gf as f32 / 100.;
         let a_coefficient_adjusted = a_coeff * max_gf_fraction;
         let b_coefficient_adjusted =
             b_coeff / (max_gf_fraction - (max_gf_fraction * b_coeff) + b_coeff);

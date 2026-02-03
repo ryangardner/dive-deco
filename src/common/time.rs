@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Time {
-    s: f64,
+    s: f32,
 }
 
 impl Add for Time {
@@ -34,16 +34,16 @@ impl Mul<Self> for Time {
         Self { s: self.s * rhs.s }
     }
 }
-impl Mul<f64> for Time {
+impl Mul<f32> for Time {
     type Output = Self;
-    fn mul(self, rhs: f64) -> Self::Output {
+    fn mul(self, rhs: f32) -> Self::Output {
         Self { s: self.s * rhs }
     }
 }
-impl Div<f64> for Time {
+impl Div<f32> for Time {
     type Output = Self;
 
-    fn div(self, rhs: f64) -> Self::Output {
+    fn div(self, rhs: f32) -> Self::Output {
         Self { s: self.s / rhs }
     }
 }
@@ -54,10 +54,10 @@ impl PartialOrd for Time {
 }
 
 impl Time {
-    pub fn from_seconds<T: Into<f64>>(val: T) -> Self {
+    pub fn from_seconds<T: Into<f32>>(val: T) -> Self {
         Self { s: val.into() }
     }
-    pub fn from_minutes<T: Into<f64>>(val: T) -> Self {
+    pub fn from_minutes<T: Into<f32>>(val: T) -> Self {
         Self {
             s: val.into() * 60.,
         }
@@ -65,10 +65,10 @@ impl Time {
     pub fn zero() -> Self {
         Self { s: 0. }
     }
-    pub fn as_seconds(&self) -> f64 {
+    pub fn as_seconds(&self) -> f32 {
         self.s
     }
-    pub fn as_minutes(&self) -> f64 {
+    pub fn as_minutes(&self) -> f32 {
         self.s / 60.
     }
 }
@@ -104,8 +104,8 @@ mod tests {
     #[test]
     fn test_into_time() {
         Time::from_seconds(1.);
-        Time::from_seconds(1);
+        Time::from_seconds(1u8); // Into<f32> implemented for u8
         Time::from_minutes(1.);
-        Time::from_minutes(1);
+        Time::from_minutes(1u8);
     }
 }

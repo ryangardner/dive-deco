@@ -31,7 +31,7 @@ pub trait DecoModelConfig {
     fn deco_ascent_rate(&self) -> AscentRatePerMinute;
     fn ceiling_type(&self) -> CeilingType;
     fn round_ceiling(&self) -> bool;
-    fn water_density(&self) -> f64;
+    fn water_density(&self) -> f32;
     fn stop_formatting(&self) -> DecoStopFormatting;
     fn last_stop_depth(&self) -> Depth;
     fn min_pp_o2(&self) -> Pressure;

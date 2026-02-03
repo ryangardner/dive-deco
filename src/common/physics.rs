@@ -1,10 +1,10 @@
 use crate::common::{Depth, MbarPressure, Pressure};
 
 /// Standard gravity in m/s^2
-pub const GRAVITY_MSS: f64 = 9.80665;
+pub const GRAVITY_MSS: f32 = 9.80665;
 
 /// Density of water in kg/m^3
-pub type WaterDensity = f64;
+pub type WaterDensity = f32;
 
 /// Common water density constants
 pub mod density {
@@ -25,7 +25,7 @@ pub fn depth_to_pressure(
     surface_pressure: MbarPressure,
     density: WaterDensity,
 ) -> Pressure {
-    let p_surf_bar = (surface_pressure as f64) / 1000.0;
+    let p_surf_bar = (surface_pressure as f32) / 1000.0;
     let hydrostatic_pressure_pa = density * GRAVITY_MSS * depth.as_meters();
     let hydrostatic_pressure_bar = hydrostatic_pressure_pa / 100_000.0;
     p_surf_bar + hydrostatic_pressure_bar
@@ -38,7 +38,7 @@ pub fn pressure_to_depth(
     surface_pressure: MbarPressure,
     density: WaterDensity,
 ) -> Depth {
-    let p_surf_bar = (surface_pressure as f64) / 1000.0;
+    let p_surf_bar = (surface_pressure as f32) / 1000.0;
     let p_delta_bar = pressure - p_surf_bar;
     // prevent negative depth if pressure < surface
     if p_delta_bar <= 0.0 {

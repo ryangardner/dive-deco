@@ -1,4 +1,4 @@
-pub type ZHLParam = f64;
+pub type ZHLParam = f32;
 // N2 half-time, N2 a coefficient, N2 b coefficient, He half-time, He a coefficient, H2 b coefficient
 pub type ZHLParams = (ZHLParam, ZHLParam, ZHLParam, ZHLParam, ZHLParam, ZHLParam);
 
@@ -24,7 +24,7 @@ pub const ZHL_16C_N2_16A_HE_VALUES: [ZHLParams; 16] = [
 // Pre-calculated (1 - 2^(-t/half-time)) for t=1s and t=60s
 // These are calculated specifically for the ZHL-16C half-times above.
 
-pub const N2_DECAY_1S: [f64; 16] = [
+pub const N2_DECAY_1S: [f32; 16] = [
     0.002883947,
     0.001443014,
     0.000923769,
@@ -43,7 +43,7 @@ pub const N2_DECAY_1S: [f64; 16] = [
     0.000018193,
 ];
 
-pub const HE_DECAY_1S: [f64; 16] = [
+pub const HE_DECAY_1S: [f32; 16] = [
     0.007621440,
     0.003818008,
     0.002444561,
@@ -62,7 +62,7 @@ pub const HE_DECAY_1S: [f64; 16] = [
     0.000048128,
 ];
 
-pub const N2_DECAY_60S: [f64; 16] = [
+pub const N2_DECAY_60S: [f32; 16] = [
     0.159103585,
     0.082995957,
     0.053942353,
@@ -81,7 +81,7 @@ pub const N2_DECAY_60S: [f64; 16] = [
     0.001090975,
 ];
 
-pub const HE_DECAY_60S: [f64; 16] = [
+pub const HE_DECAY_60S: [f32; 16] = [
     0.368108684,
     0.205084082,
     0.136579296,

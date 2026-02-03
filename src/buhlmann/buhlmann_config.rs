@@ -26,7 +26,7 @@ pub struct BuhlmannConfig {
     pub ceiling_type: CeilingType,
     pub round_ceiling: bool,
     pub recalc_all_tissues_m_values: bool,
-    pub water_density: f64,
+    pub water_density: f32,
     pub stop_formatting: DecoStopFormatting,
     pub last_stop_depth: Depth,
     pub min_pp_o2: Pressure,
@@ -71,7 +71,7 @@ impl BuhlmannConfig {
         self
     }
 
-    pub fn with_water_density(mut self, water_density: f64) -> Self {
+    pub fn with_water_density(mut self, water_density: f32) -> Self {
         self.water_density = water_density;
         self
     }
@@ -79,7 +79,7 @@ impl BuhlmannConfig {
     /// Set water density using D6 firmware code logic (0-4 approx)
     /// Density = 1000.0 + (code * 10.0)
     pub fn with_d6_salinity_code(mut self, code: u8) -> Self {
-        self.water_density = 1000.0 + (code as f64 * 10.0);
+        self.water_density = 1000.0 + (code as f32 * 10.0);
         self
     }
 
@@ -93,12 +93,12 @@ impl BuhlmannConfig {
         self
     }
 
-    pub fn with_min_pp_o2(mut self, min_pp_o2: f64) -> Self {
+    pub fn with_min_pp_o2(mut self, min_pp_o2: f32) -> Self {
         self.min_pp_o2 = min_pp_o2;
         self
     }
 
-    pub fn with_gas_switch_duration<T: Into<f64>>(mut self, minutes: T) -> Self {
+    pub fn with_gas_switch_duration<T: Into<f32>>(mut self, minutes: T) -> Self {
         self.gas_switch_duration = Time::from_minutes(minutes.into());
         self
     }
@@ -156,7 +156,7 @@ impl DecoModelConfig for BuhlmannConfig {
         self.round_ceiling
     }
 
-    fn water_density(&self) -> f64 {
+    fn water_density(&self) -> f32 {
         self.water_density
     }
 
@@ -168,7 +168,7 @@ impl DecoModelConfig for BuhlmannConfig {
         self.last_stop_depth
     }
 
-    fn min_pp_o2(&self) -> f64 {
+    fn min_pp_o2(&self) -> f32 {
         self.min_pp_o2
     }
 
@@ -178,7 +178,7 @@ impl DecoModelConfig for BuhlmannConfig {
 }
 
 impl BuhlmannConfig {
-    fn validate_water_density(&self, water_density: f64) -> Result<(), ConfigValidationErr> {
+    fn validate_water_density(&self, water_density: f32) -> Result<(), ConfigValidationErr> {
         if !(900.0..=1100.0).contains(&water_density) {
             return Err(ConfigValidationErr::new(
                 "water_density",

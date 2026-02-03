@@ -9,13 +9,13 @@ use serde::{Deserialize, Serialize};
 #[cfg(test)]
 use alloc::vec;
 
-pub type DepthType = f64;
+pub type DepthType = f32;
 pub enum Units {
     Metric,
     Imperial,
 }
 
-pub trait Unit<T = f64>: Sized {
+pub trait Unit<T = f32>: Sized {
     fn from_units(val: T, units: Units) -> Self;
     fn to_units(&self, units: Units) -> T;
     fn base_unit(&self) -> T;
@@ -75,10 +75,10 @@ impl Mul<Self> for Depth {
     }
 }
 
-impl Mul<f64> for Depth {
+impl Mul<f32> for Depth {
     type Output = Self;
 
-    fn mul(self, rhs: f64) -> Self::Output {
+    fn mul(self, rhs: f32) -> Self::Output {
         Self { m: self.m * rhs }
     }
 }
@@ -91,10 +91,10 @@ impl Div<Self> for Depth {
     }
 }
 
-impl Div<f64> for Depth {
+impl Div<f32> for Depth {
     type Output = Self;
 
-    fn div(self, rhs: f64) -> Self::Output {
+    fn div(self, rhs: f32) -> Self::Output {
         Self { m: self.m / rhs }
     }
 }
@@ -118,7 +118,7 @@ impl Unit for Depth {
             Units::Imperial => self.as_feet(),
         }
     }
-    fn base_unit(&self) -> f64 {
+    fn base_unit(&self) -> f32 {
         self.m
     }
 }
@@ -189,14 +189,14 @@ mod tests {
 
     #[test]
     fn test_depth_param_type_conversion() {
-        vec![Depth::from_meters(1.), Depth::from_meters(1)]
+        vec![Depth::from_meters(1.), Depth::from_meters(1.0)]
             .into_iter()
             .reduce(|a, b| {
                 assert_eq!(a, b);
                 Depth::zero()
             });
 
-        vec![Depth::from_feet(1.), Depth::from_feet(1)]
+        vec![Depth::from_feet(1.), Depth::from_feet(1.0)]
             .into_iter()
             .reduce(|a, b| {
                 assert_eq!(a, b);
@@ -204,8 +204,8 @@ mod tests {
             });
     }
 
-    fn with_precision(x: f64, precision: u32) -> f64 {
-        let d = 10_u32.pow(precision) as f64;
+    fn with_precision(x: f32, precision: u32) -> f32 {
+        let d = 10_u32.pow(precision) as f32;
         (x * d).round() / d
     }
 }

@@ -6,15 +6,15 @@ use serde::{Deserialize, Serialize};
 use super::{round, Depth};
 
 // alveolar water vapor pressure assuming 47 mm Hg at 37C (Buhlmann's value)
-const ALVEOLI_WATER_VAPOR_PRESSURE: f64 = 0.0627;
+const ALVEOLI_WATER_VAPOR_PRESSURE: f32 = 0.0627;
 
 /// Represents the composition of a physical gas mixture in a cylinder.
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct GasMix {
-    pub fraction_o2: f64,
-    pub fraction_he: f64,
-    pub fraction_n2: f64,
+    pub fraction_o2: f32,
+    pub fraction_he: f32,
+    pub fraction_n2: f32,
 }
 
 pub type Gas = GasMix; // Compatibility alias, though we will deprecate usage
@@ -44,7 +44,7 @@ pub enum BreathingSource {
 
     /// Closed Circuit Rebreather: The diver breathes from a loop.
     /// ppO2 is maintained at `setpoint` using `diluent`.
-    ClosedCircuit { setpoint: f64, diluent: GasMix },
+    ClosedCircuit { setpoint: f32, diluent: GasMix },
 }
 
 impl core::fmt::Display for GasMix {
@@ -60,7 +60,7 @@ impl core::fmt::Display for GasMix {
 
 impl GasMix {
     /// init new gas with fractions (eg. 0.21, 0. for air)
-    pub fn new(o2_fraction: f64, he_fraction: f64) -> Self {
+    pub fn new(o2_fraction: f32, he_fraction: f32) -> Self {
         if !(0. ..=1.).contains(&o2_fraction) {
             panic!("Invalid O2 fraction");
         }
@@ -79,7 +79,7 @@ impl GasMix {
         }
     }
 
-    pub fn fraction_n2(&self) -> f64 {
+    pub fn fraction_n2(&self) -> f32 {
         self.fraction_n2
     }
 
@@ -114,7 +114,7 @@ impl GasMix {
 
     /// Max Operating Depth (MOD) (Open Circuit) using standard logic.
     pub fn max_operating_depth(&self, pp_o2_limit: Pressure) -> Depth {
-        if self.fraction_o2 <= f64::EPSILON {
+        if self.fraction_o2 <= f32::EPSILON {
             // If O2 is 0%, MOD is effectively infinite based on O2 toxicity,
             // though practically unbreathable.
             // Standard behavior usually returns a very deep depth.
@@ -133,9 +133,9 @@ impl GasMix {
         &self,
         pp_o2_limit: Pressure,
         surface_pressure: MbarPressure,
-        water_density: f64,
+        water_density: f32,
     ) -> Depth {
-        if self.fraction_o2 <= f64::EPSILON {
+        if self.fraction_o2 <= f32::EPSILON {
             return Depth::from_meters(10000.0);
         }
         let p_target = pp_o2_limit / self.fraction_o2;
@@ -146,7 +146,7 @@ impl GasMix {
     /// Returns the depth at which the gas becomes hypoxic (PO2 < min_pp_o2).
     /// Safe to breathe at depths >= this value.
     pub fn min_operating_depth(&self, min_pp_o2: Pressure) -> Depth {
-        if self.fraction_o2 <= f64::EPSILON {
+        if self.fraction_o2 <= f32::EPSILON {
             // 0% O2 is essentially unbreathable (MinOD infinite)
             // But let's return a very deep depth to indicate it's only safe very deep (if we ignore physiology of pure inert gas)
             // Actually, 0% O2 is NEVER safe. return MAX
@@ -174,9 +174,9 @@ impl GasMix {
         &self,
         min_pp_o2: Pressure,
         surface_pressure: MbarPressure,
-        water_density: f64,
+        water_density: f32,
     ) -> Depth {
-        if self.fraction_o2 <= f64::EPSILON {
+        if self.fraction_o2 <= f32::EPSILON {
             return Depth::from_meters(10000.0);
         }
         let p_target = min_pp_o2 / self.fraction_o2;
@@ -207,7 +207,7 @@ impl BreathingSource {
     ///
     /// # Arguments
     /// * `ambient_pressure` - Absolute pressure in bar (Depth + Surface Pressure).
-    pub fn calculate_pressures(&self, ambient_pressure: f64) -> PartialPressures {
+    pub fn calculate_pressures(&self, ambient_pressure: f32) -> PartialPressures {
         match self {
             BreathingSource::OpenCircuit(mix) => mix.partial_pressures(ambient_pressure),
             BreathingSource::ClosedCircuit { setpoint, diluent } => {
@@ -226,7 +226,7 @@ impl BreathingSource {
                 // The remaining pressure in the loop must be filled by the diluent's inert components.
                 let total_inert_pressure = ambient_pressure - effective_pp_o2;
 
-                if total_inert_pressure <= f64::EPSILON {
+                if total_inert_pressure <= f32::EPSILON {
                     return PartialPressures {
                         o2: effective_pp_o2,
                         he: 0.0,
@@ -239,7 +239,7 @@ impl BreathingSource {
                 let diluent_inert_fraction = diluent.fraction_he + diluent.fraction_n2();
 
                 // Edge Case: 100% O2 Diluent (Oxygen Rebreather)
-                if diluent_inert_fraction <= f64::EPSILON {
+                if diluent_inert_fraction <= f32::EPSILON {
                     return PartialPressures {
                         o2: effective_pp_o2,
                         he: 0.0,
@@ -291,7 +291,7 @@ impl BreathingSource {
         &self,
         pp_o2_limit: Pressure,
         surface_pressure: MbarPressure,
-        water_density: f64,
+        water_density: f32,
     ) -> Depth {
         match self {
             BreathingSource::OpenCircuit(mix) => {
@@ -352,7 +352,7 @@ impl BreathingSource {
         &self,
         min_pp_o2: Pressure,
         surface_pressure: MbarPressure,
-        water_density: f64,
+        water_density: f32,
     ) -> Depth {
         match self {
             BreathingSource::OpenCircuit(mix) => {
@@ -384,7 +384,7 @@ impl BreathingSource {
     /// Returns the O2 fraction of the source.
     /// For OC, returns the gas mix O2 fraction.
     /// For CCR, returns the Diluent O2 fraction (mostly for identification/logging).
-    pub fn fraction_o2(&self) -> f64 {
+    pub fn fraction_o2(&self) -> f32 {
         match self {
             BreathingSource::OpenCircuit(mix) => mix.fraction_o2,
             BreathingSource::ClosedCircuit { diluent, .. } => diluent.fraction_o2,
@@ -479,9 +479,9 @@ mod tests {
     fn test_mod() {
         // o2, he, max_ppo2, MOD
         let test_cases = [
-            (0.21, 0., 1.4, 56.66666666666666),
+            (0.21, 0., 1.4, 56.66667),
             (0.50, 0., 1.6, 22.),
-            (0.21, 0.35, 1.4, 56.66666666666666),
+            (0.21, 0.35, 1.4, 56.66667),
             (0., 0., 1.4, 10000.0),
         ];
         for (pp_o2, pe_he, max_pp_o2, expected_mod) in test_cases {
@@ -495,7 +495,7 @@ mod tests {
     fn test_end() {
         // depth, o2, he, END
         let test_cases = [
-            (60., 0.21, 0.40, 32.),
+            (60., 0.21, 0.40, 32.000004),
             (0., 0.21, 0.40, 0.),
             (40., 0.21, 0., 40.),
         ];

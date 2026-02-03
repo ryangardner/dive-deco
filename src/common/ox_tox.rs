@@ -7,12 +7,12 @@ use crate::RecordData;
 use super::global_types::Otu;
 use super::{exp, powf, Cns, Depth, MbarPressure};
 
-const CNS_ELIMINATION_HALF_TIME_MINUTES: f64 = 90.;
-const OTU_EQUATION_EXPONENT: f64 = -0.8333;
+const CNS_ELIMINATION_HALF_TIME_MINUTES: f32 = 90.;
+const OTU_EQUATION_EXPONENT: f32 = -0.8333;
 
 // CNS limits table derived from NOAA limits with log-linear interpolation.
 // Source: https://thetheoreticaldiver.org/wordpress/index.php/2019/08/15/calculating-oxygen-cns-toxicity/
-pub static CNS_LOOKUP: [f64; 131] = [
+pub static CNS_LOOKUP: [f32; 131] = [
     900.0000, 882.0000, 864.0000, 846.0000, 828.0000, 810.0000, 792.0000, 774.0000, 756.0000,
     738.0000, 720.0000, 705.0000, 690.0000, 675.0000, 660.0000, 645.0000, 630.0000, 615.0000,
     600.0000, 585.0000, 570.0000, 558.0000, 546.0000, 534.0000, 522.0000, 510.0000, 498.0000,
@@ -55,7 +55,7 @@ impl OxTox {
         &mut self,
         record: &RecordData,
         surface_pressure: MbarPressure,
-        water_density: f64,
+        water_density: f32,
     ) {
         self.recalculate_cns(record, surface_pressure, water_density);
         self.recalculate_otu(record, surface_pressure, water_density);
@@ -65,7 +65,7 @@ impl OxTox {
         &mut self,
         record: &RecordData,
         surface_pressure: MbarPressure,
-        water_density: f64,
+        water_density: f32,
     ) {
         let RecordData { depth, time, gas } = *record;
 
@@ -107,7 +107,7 @@ impl OxTox {
         &mut self,
         record: &RecordData,
         surface_pressure: MbarPressure,
-        water_density: f64,
+        water_density: f32,
     ) {
         let RecordData { depth, time, gas } = *record;
         use crate::common::physics::depth_to_pressure;
@@ -385,6 +385,6 @@ mod tests {
             gas: &ean32,
         };
         ox_tox.recalculate_otu(&record, 1013, 1020.0);
-        assert_eq!(ox_tox.otu(), 37.76975864983159);
+        assert_eq!(ox_tox.otu(), 37.769764);
     }
 }

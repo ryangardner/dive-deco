@@ -462,7 +462,7 @@ impl Deco {
         current_gas: &BreathingSource,
         gas_mixes: Vec<BreathingSource>,
         surface_pressure: MbarPressure,
-        water_density: f64,
+        water_density: f32,
     ) -> Option<BreathingSource> {
         use crate::common::physics::depth_to_pressure;
         let p_amb = depth_to_pressure(current_depth, surface_pressure, water_density);
@@ -584,7 +584,7 @@ impl Deco {
         let check_condition = |time_min: u32| -> bool {
             let mut sim = current_model.fork();
             let state = sim.dive_state();
-            sim.record(state.depth, Time::from_minutes(time_min as f64), &state.gas);
+            sim.record(state.depth, Time::from_minutes(time_min as f32), &state.gas);
 
             let res = self.next_deco_action(&sim, gas_mixes.clone());
             match res {
@@ -630,7 +630,7 @@ impl Deco {
         // Return first valid duration found (high bound of the binary search)
         // Granularity is currently in minutes.
 
-        Time::from_minutes(high as f64)
+        Time::from_minutes(high as f32)
     }
 }
 
