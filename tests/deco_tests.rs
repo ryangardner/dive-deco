@@ -387,6 +387,67 @@ fn test_deco_last_stop_depth() {
     assert_eq!(last_stop.start_depth.as_meters(), 6.0);
 }
 
+#[test]
+fn test_gas_switch_duration_impact() {
+    let air = BreathingSource::OpenCircuit(Gas::new(0.21, 0.));
+    let ean_50 = BreathingSource::OpenCircuit(Gas::new(0.50, 0.));
+    let gas_mixes = vec![air, ean_50];
+
+    // Profile: 40m for 20min
+    let dive_action = |model: &mut BuhlmannModel| {
+        model.record(Depth::from_meters(40.), Time::from_minutes(20.), &air);
+    };
+
+    // 1. With switch duration (default 2 min)
+    let mut model_with_duration = BuhlmannModel::new(
+        BuhlmannConfig::default()
+            .with_deco_ascent_rate(9.)
+            .with_gas_switch_duration(2.0),
+    );
+    dive_action(&mut model_with_duration);
+    let deco_with = model_with_duration.deco(gas_mixes.clone()).unwrap();
+
+    // 2. Without switch duration (0 min)
+    let mut model_without_duration = BuhlmannModel::new(
+        BuhlmannConfig::default()
+            .with_deco_ascent_rate(9.)
+            .with_gas_switch_duration(0.0),
+    );
+    dive_action(&mut model_without_duration);
+    let deco_without = model_without_duration.deco(gas_mixes).unwrap();
+
+    println!("TTS with duration: {:?}", deco_with.tts);
+    println!("TTS without duration: {:?}", deco_without.tts);
+
+    // Verify TTS difference
+    // Expected diff: 120s (for one switch) minus any credit gained from the stop.
+    // Actually, spending 2 mins at switch depth *reduces* later stops.
+    // So TTS increase might be < 120s?
+    // But switch time is added to TTS.
+    // TTS = ascent + stops + switch_time.
+    // If switch_time + 120, stops might decrease by X.
+    // Total change: 120 - X.
+    // Let's just assert it is different and the switch stage durations are correct.
+    // And TTS with > TTS without (usually true unless deco clears completely).
+    
+    assert!(deco_with.tts.as_seconds() > deco_without.tts.as_seconds());
+
+    // Verify Stage Durations
+    let switch_stage_with = deco_with
+        .deco_stages
+        .iter()
+        .find(|s| s.stage_type == DecoStageType::GasSwitch)
+        .unwrap();
+    assert_eq!(switch_stage_with.duration.as_seconds(), 120.0);
+
+    let switch_stage_without = deco_without
+        .deco_stages
+        .iter()
+        .find(|s| s.stage_type == DecoStageType::GasSwitch)
+        .unwrap();
+    assert_eq!(switch_stage_without.duration.as_seconds(), 0.0);
+}
+
 fn get_first_deco_stop_depth(deco: DecoRuntime) -> Option<Depth> {
     let first_stop = deco
         .deco_stages
