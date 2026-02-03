@@ -448,6 +448,54 @@ fn test_gas_switch_duration_impact() {
     assert_eq!(switch_stage_without.duration.as_seconds(), 0.0);
 }
 
+#[test]
+fn test_switch_at_stop_only() {
+    let air = BreathingSource::OpenCircuit(Gas::new(0.21, 0.));
+    let ean_50 = BreathingSource::OpenCircuit(Gas::new(0.50, 0.));
+    let gas_mixes = vec![air, ean_50];
+
+    // Profile: 40m for 20min
+    let dive_action = |model: &mut BuhlmannModel| {
+        model.record(Depth::from_meters(40.), Time::from_minutes(20.), &air);
+    };
+
+    // 1. switch_at_stop_only = false (Default)
+    // Should switch at MOD (approx 21.65m)
+    let mut model_anywhere = BuhlmannModel::new(
+        BuhlmannConfig::default()
+            .with_deco_ascent_rate(9.)
+            .with_switch_at_stop_only(false),
+    );
+    dive_action(&mut model_anywhere);
+    let deco_anywhere = model_anywhere.deco(gas_mixes.clone()).unwrap();
+
+    let switch_stage_anywhere = deco_anywhere
+        .deco_stages
+        .iter()
+        .find(|s| s.stage_type == DecoStageType::GasSwitch)
+        .unwrap();
+    // Switched at MOD depth
+    assert!((switch_stage_anywhere.start_depth.as_meters() - 21.65).abs() < 0.1);
+
+    // 2. switch_at_stop_only = true
+    // Should switch at the 21.0m stop
+    let mut model_stop_only = BuhlmannModel::new(
+        BuhlmannConfig::default()
+            .with_deco_ascent_rate(9.)
+            .with_switch_at_stop_only(true),
+    );
+    dive_action(&mut model_stop_only);
+    let deco_stop_only = model_stop_only.deco(gas_mixes).unwrap();
+
+    let switch_stage_stop_only = deco_stop_only
+        .deco_stages
+        .iter()
+        .find(|s| s.stage_type == DecoStageType::GasSwitch)
+        .unwrap();
+    // Switched at stop depth (first stop on this profile when staying on air is 6m)
+    assert_eq!(switch_stage_stop_only.start_depth.as_meters(), 6.0);
+}
+
 fn get_first_deco_stop_depth(deco: DecoRuntime) -> Option<Depth> {
     let first_stop = deco
         .deco_stages

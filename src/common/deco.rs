@@ -428,7 +428,10 @@ impl Deco {
                 && (current_depth >= gas_min_od)
                 && (gas_end <= Depth::from_meters(DEFAULT_MAX_END_DEPTH))
             {
-                return Ok((Some(DecoAction::SwitchGas), Some(switch_gas)));
+                // If switch_at_stop_only is enabled, only switch if we are at a stop
+                if !sim_model.config().switch_at_stop_only() || current_depth == stop_depth {
+                    return Ok((Some(DecoAction::SwitchGas), Some(switch_gas)));
+                }
             }
         }
 
@@ -444,7 +447,7 @@ impl Deco {
                     sim_model.config().water_density(),
                 );
 
-                if gas_mod >= stop_depth {
+                if gas_mod >= stop_depth && !sim_model.config().switch_at_stop_only() {
                     return Ok((
                         Some(DecoAction::AscentToGasSwitchDepth),
                         Some(next_switch_gas),

@@ -21,6 +21,7 @@ fn main() {
         last_stop_depth: Depth::from_meters(3.0),
         min_pp_o2: 0.18,
         gas_switch_duration: Time::from_minutes(2.0),
+        switch_at_stop_only: true,
     };
     let model_2 = BuhlmannModel::new(config_instance);
     println!("{:?}", model_2.config());
