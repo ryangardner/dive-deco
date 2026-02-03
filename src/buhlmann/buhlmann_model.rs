@@ -127,7 +127,7 @@ impl DecoModel for BuhlmannModel {
         }
 
         // 2) No movement -> treat as constant depth segment (preserves any "record" side-effects).
-        // Using crate::common::math_utils::abs instead of directly calling abs() on f64 to match imports
+        // Using crate::common::math_utils::abs instead of directly calling abs() on f32 to match imports
         use crate::common::math_utils::abs;
 
         if abs((target_depth - start_depth).as_meters()) < 1e-9 {
