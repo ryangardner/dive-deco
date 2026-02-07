@@ -4,6 +4,19 @@ use dive_deco::{
 };
 pub mod fixtures;
 
+#[cfg(all(feature = "heapless", not(feature = "alloc")))]
+use heapless::Vec as HVec;
+
+#[cfg(feature = "alloc")]
+fn make_bailouts(gases: &[GasMix]) -> Vec<GasMix> {
+    gases.to_vec()
+}
+
+#[cfg(all(feature = "heapless", not(feature = "alloc")))]
+fn make_bailouts(gases: &[GasMix]) -> HVec<GasMix, 16> {
+    HVec::from_slice(gases).expect("Too many bailout gases")
+}
+
 #[test]
 fn test_ccr_breathing_source_pressures() {
     let diluent = GasMix::new(0.21, 0.35); // 21/35 Tmx
@@ -91,7 +104,7 @@ fn test_dive_computer_integration() {
     let diluent = GasMix::air();
     let bailout = GasMix::new(0.5, 0.0); // EAN50
 
-    let mut computer = DiveComputer::new(diluent, vec![bailout], config, DiveMode::ClosedCircuit);
+    let mut computer = DiveComputer::new(diluent, make_bailouts(&[bailout]), config, DiveMode::ClosedCircuit);
 
     // Initial state: CCR Low
     let source = computer.step(0.0);
@@ -122,7 +135,7 @@ fn test_ccr_deco_calculation() {
         switch_depth_ascent: Some(6.0),
     };
     let diluent = GasMix::air();
-    let mut computer = DiveComputer::new(diluent, vec![], config, DiveMode::ClosedCircuit);
+    let mut computer = DiveComputer::new(diluent, make_bailouts(&[]), config, DiveMode::ClosedCircuit);
     let mut model = BuhlmannModel::default();
 
     // Dive to 40m for 20 mins
@@ -134,7 +147,7 @@ fn test_ccr_deco_calculation() {
     model.record(depth, time, &source);
 
     // Calculate deco
-    let deco_runtime = model.deco(vec![source]).unwrap();
+    let deco_runtime = model.deco(&[source]).unwrap();
 
     // Ensure deco stages use the CCR source
     assert!(deco_runtime.deco_stages.len() > 0);
@@ -154,7 +167,7 @@ fn test_dive_computer_planning() {
 
     let computer = DiveComputer::new(
         diluent,
-        vec![bailout_1, bailout_2],
+        make_bailouts(&[bailout_1, bailout_2]),
         config,
         DiveMode::ClosedCircuit,
     );
@@ -196,7 +209,7 @@ fn test_bailout_gas_selection() {
 
     let computer = DiveComputer::new(
         air,
-        vec![air, ean50, oxygen],
+        make_bailouts(&[air, ean50, oxygen]),
         config,
         DiveMode::ClosedCircuit,
     );

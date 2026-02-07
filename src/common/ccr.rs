@@ -1,6 +1,14 @@
 use crate::common::gas::{BreathingSource, GasMix};
 use crate::{BuhlmannModel, Deco, DecoModel, DecoRuntime, Depth, Time};
+#[cfg(feature = "alloc")]
 use alloc::vec::Vec;
+#[cfg(all(feature = "heapless", not(feature = "alloc")))]
+use heapless::Vec as HVec;
+
+#[cfg(feature = "alloc")]
+type BailoutContainer = Vec<GasMix>;
+#[cfg(all(feature = "heapless", not(feature = "alloc")))]
+type BailoutContainer = HVec<GasMix, 16>;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -217,7 +225,7 @@ pub struct DiveComputer {
     pub diluent_supply: GasMix,
 
     /// The finite resource of bailout gases (e.g., AL80s).
-    pub bailout_gases: Vec<GasMix>,
+    pub bailout_gases: BailoutContainer,
 
     /// The Logic Controller for the loop.
     pub ccr_controller: SetpointController,
@@ -236,7 +244,7 @@ pub struct DivePlan {
 impl DiveComputer {
     pub fn new(
         diluent: GasMix,
-        bailout_gases: Vec<GasMix>,
+        bailout_gases: BailoutContainer,
         config: SetpointConfig,
         mode: DiveMode,
     ) -> Self {
@@ -287,7 +295,7 @@ impl DiveComputer {
         let mut ccr_deco = Deco::default();
         let current_source = current_model.dive_state().gas;
         // Include current source to satisfy Deco's requirement of current gas being in list
-        let ccr_plan = ccr_deco.calc(current_model.clone(), vec![current_source])?;
+        let ccr_plan = ccr_deco.calc(current_model.clone(), &[current_source])?;
 
         // 2. Bailout OC Plan
         let mut bailout_deco = Deco::default();
@@ -299,7 +307,7 @@ impl DiveComputer {
         let best_bailout = self
             .bailout_gases
             .iter()
-            .filter(|g| {
+            .filter(|g: &&GasMix| {
                 let p_amb = crate::common::physics::depth_to_pressure(
                     current_depth,
                     current_model.config().surface_pressure,
@@ -310,7 +318,7 @@ impl DiveComputer {
                 g.partial_pressures(p_amb).o2 <= 1.61
             })
             // Find the richest (highest O2) gas available at this depth
-            .max_by(|a, b| a.fraction_o2().partial_cmp(&b.fraction_o2()).unwrap())
+            .max_by(|a: &&GasMix, b: &&GasMix| a.fraction_o2().partial_cmp(&b.fraction_o2()).unwrap())
             .unwrap_or(&self.diluent_supply);
 
         // Record the switch event in the simulation
@@ -333,7 +341,7 @@ impl DiveComputer {
             bailout_sources.push(current_bailout_gas);
         }
 
-        let bailout_plan = bailout_deco.calc(bailout_model, bailout_sources)?;
+        let bailout_plan = bailout_deco.calc(bailout_model, &bailout_sources)?;
 
         Ok(DivePlan {
             ccr_runtime: ccr_plan,

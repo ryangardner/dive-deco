@@ -1,5 +1,5 @@
 use criterion::{criterion_group, criterion_main, Criterion};
-use dive_deco::{BreathingSource, BuhlmannConfig, BuhlmannModel, DecoModel, Depth, Gas, Time};
+use dive_deco::{BreathingSource, BuhlmannConfig, BuhlmannModel, DecoModel, Depth, GasMix, Time};
 
 pub fn buhlmann_ndl_benchmark(c: &mut Criterion) {
     c.bench_function("Buhlmann NDL", |b| {
@@ -8,7 +8,7 @@ pub fn buhlmann_ndl_benchmark(c: &mut Criterion) {
             model.record(
                 Depth::from_meters(20.),
                 Time::from_seconds(5.),
-                &BreathingSource::OpenCircuit(Gas::air()),
+                &BreathingSource::OpenCircuit(GasMix::air()),
             );
             model.ndl();
         })
@@ -17,8 +17,8 @@ pub fn buhlmann_ndl_benchmark(c: &mut Criterion) {
 
 pub fn buhlmann_deco_benchmark(c: &mut Criterion) {
     let mut model = BuhlmannModel::default();
-    let air = BreathingSource::OpenCircuit(Gas::new(0.21, 0.));
-    let ean_50 = BreathingSource::OpenCircuit(Gas::new(0.50, 0.));
+    let air = BreathingSource::OpenCircuit(GasMix::new(0.21, 0.));
+    let ean_50 = BreathingSource::OpenCircuit(GasMix::new(0.50, 0.));
     model.record(Depth::from_meters(40.0001), Time::from_minutes(20.), &air);
     c.bench_function("Buhlmann deco", |b| {
         b.iter(|| model.deco(vec![air, ean_50]))
@@ -32,8 +32,8 @@ pub fn buhlmann_deco_adaptive_recalc(c: &mut Criterion) {
 
     let mut model = BuhlmannModel::new(config);
 
-    let air = BreathingSource::OpenCircuit(Gas::air());
-    let ean50 = BreathingSource::OpenCircuit(Gas::new(0.50, 0.));
+    let air = BreathingSource::OpenCircuit(GasMix::air());
+    let ean50 = BreathingSource::OpenCircuit(GasMix::new(0.50, 0.));
     let available_gasses = vec![air, ean50];
 
     c.bench_function("Record and deco", |b| {
@@ -55,9 +55,9 @@ pub fn buhlmann_full(c: &mut Criterion) {
 
     let mut model = BuhlmannModel::new(config);
 
-    let air = BreathingSource::OpenCircuit(Gas::air());
-    let ean50 = BreathingSource::OpenCircuit(Gas::new(0.50, 0.));
-    let o2 = BreathingSource::OpenCircuit(Gas::new(1., 0.));
+    let air = BreathingSource::OpenCircuit(GasMix::air());
+    let ean50 = BreathingSource::OpenCircuit(GasMix::new(0.50, 0.));
+    let o2 = BreathingSource::OpenCircuit(GasMix::new(1., 0.));
     let available_gasses = vec![air, ean50, o2];
 
     c.bench_function("Buhlmann full", |b| {

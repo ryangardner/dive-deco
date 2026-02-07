@@ -8,6 +8,8 @@ pub mod math_utils;
 mod ox_tox;
 mod record;
 mod sim;
+pub mod buffer;
+
 mod time;
 // CCR module
 pub mod ccr;

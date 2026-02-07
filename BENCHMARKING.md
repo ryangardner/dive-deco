@@ -205,16 +205,48 @@ cargo clean
 cargo bench --bench baseline_benchmark
 ```
 
-## CI/CD Integration
-
-For automated performance regression detection:
-
 ```bash
 # In your CI pipeline
 cargo bench --bench baseline_benchmark -- --save-baseline ci-baseline
 
 # On subsequent runs
 cargo bench --bench baseline_benchmark -- --baseline ci-baseline
+```
+
+## Persistent Baselines
+
+To avoid re-baselining against the `benchmark-baseline` branch every time, we store a persistent baseline in `benches/baselines/baseline-6.0.5-upstream`.
+
+### Using the Persistent Baseline
+
+If you have performed a `cargo clean` or are on a fresh environment, you must first restore the baseline data to Criterion's target directory:
+
+```bash
+mkdir -p target/criterion
+cp -r benches/baselines/baseline-6.0.5-upstream/. target/criterion/
+```
+
+Then run your benchmark as usual, referencing the baseline:
+
+```bash
+cargo bench --bench baseline_benchmark -- --baseline baseline-6.0.5-upstream
+```
+
+### Updating the Persistent Baseline
+
+If the upstream baseline needs to be updated (e.g., a new upstream release):
+
+1. Switch to the target baseline branch.
+2. Run `cargo bench --bench baseline_benchmark -- --save-baseline baseline-6.0.5-upstream`.
+3. Run the following script to selectively copy the baseline data:
+
+```bash
+rm -rf benches/baselines/baseline-6.0.5-upstream
+find target/criterion -name "baseline-6.0.5-upstream" -type d | while read dir; do
+  rel_path=${dir#target/criterion/}
+  mkdir -p "benches/baselines/baseline-6.0.5-upstream/$rel_path"
+  cp -r "$dir/." "benches/baselines/baseline-6.0.5-upstream/$rel_path/"
+done
 ```
 
 ## Profiling

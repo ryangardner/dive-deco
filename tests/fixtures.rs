@@ -1,4 +1,4 @@
-use dive_deco::{BuhlmannConfig, BuhlmannModel, DecoModel, Gas, GradientFactors};
+use dive_deco::{BuhlmannConfig, BuhlmannModel, DecoModel, GasMix, GradientFactors};
 
 pub fn model_default() -> BuhlmannModel {
     BuhlmannModel::default()
@@ -10,8 +10,8 @@ pub fn model_gf(gf: GradientFactors) -> BuhlmannModel {
     BuhlmannModel::new(config_with_gf)
 }
 
-pub fn gas_air() -> Gas {
-    Gas::new(0.21, 0.)
+pub fn gas_air() -> GasMix {
+    GasMix::new(0.21, 0.)
 }
 
 #[macro_export]

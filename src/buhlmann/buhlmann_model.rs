@@ -9,8 +9,7 @@ use crate::common::{
     GradientFactor, Otu, OxTox, RecordData,
 };
 use crate::{CeilingType, DecoCalculationError, DecoRuntime, GradientFactors, Sim, Time};
-use alloc::vec;
-use alloc::vec::Vec;
+
 use core::cmp::Ordering;
 
 #[cfg(feature = "serde")]
@@ -22,7 +21,7 @@ const NDL_CUT_OFF_MINS: u8 = 99;
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct BuhlmannModel {
     config: BuhlmannConfig,
-    compartments: Vec<Compartment>,
+    compartments: [Compartment; 16],
     state: BuhlmannState,
     sim: bool,
 }
@@ -66,15 +65,14 @@ impl DecoModel for BuhlmannModel {
         }
         // air as a default init gas
         let initial_model_state = BuhlmannState::default();
-        let mut model = Self {
+        let compartments = Self::create_compartments(ZHL_16C_N2_16A_HE_VALUES, config);
+
+        Self {
             config,
-            compartments: vec![],
+            compartments,
             state: initial_model_state,
             sim: false,
-        };
-        model.create_compartments(ZHL_16C_N2_16A_HE_VALUES, config);
-
-        model
+        }
     }
 
     fn config(&self) -> BuhlmannConfig {
@@ -233,7 +231,7 @@ impl DecoModel for BuhlmannModel {
 
         let leading_comp: &Compartment = self.leading_comp();
         let mut ceiling = match ceiling_type {
-            CeilingType::Actual => leading_comp.ceiling(),
+            CeilingType::Actual => leading_comp.ceiling(&self.config),
             CeilingType::Adaptive => {
                 let mut sim_model = self.fork();
                 let sim_gas = sim_model.dive_state().gas;
@@ -267,7 +265,7 @@ impl DecoModel for BuhlmannModel {
         ceiling
     }
 
-    fn deco(&self, gas_mixes: Vec<BreathingSource>) -> Result<DecoRuntime, DecoCalculationError> {
+    fn deco(&self, gas_mixes: &[BreathingSource]) -> Result<DecoRuntime, DecoCalculationError> {
         let mut deco = Deco::default();
         deco.calc(self.fork(), gas_mixes)
     }
@@ -368,8 +366,8 @@ impl BuhlmannModel {
         }
     }
 
-    pub fn tissues(&self) -> Vec<Compartment> {
-        self.compartments.clone()
+    pub fn tissues(&self) -> [Compartment; 16] {
+        self.compartments
     }
 
     pub fn update_config(&mut self, new_config: BuhlmannConfig) -> Result<(), ConfigValidationErr> {
@@ -409,13 +407,8 @@ impl BuhlmannModel {
         &mut comps[leading_comp_index]
     }
 
-    fn create_compartments(&mut self, zhl_values: [ZHLParams; 16], config: BuhlmannConfig) {
-        let mut compartments: Vec<Compartment> = vec![];
-        for (i, comp_values) in zhl_values.into_iter().enumerate() {
-            let compartment = Compartment::new(i as u8 + 1, comp_values, config);
-            compartments.push(compartment);
-        }
-        self.compartments = compartments;
+    fn create_compartments(zhl_values: [ZHLParams; 16], config: BuhlmannConfig) -> [Compartment; 16] {
+        core::array::from_fn(|i| Compartment::new((i + 1) as u8, zhl_values[i], config))
     }
 
     fn recalculate(&mut self, record: RecordData) {

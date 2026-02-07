@@ -24,7 +24,7 @@ fn test_hypoxic_ascent_limit() {
     );
 
     // Calculate deco with ONLY this gas available
-    let runtime = deco.calc(model, vec![hypoxic_gas]);
+    let runtime = deco.calc(model, &[hypoxic_gas]);
 
     assert_eq!(
         runtime,

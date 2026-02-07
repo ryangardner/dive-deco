@@ -6,8 +6,8 @@ use core::{
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-#[cfg(test)]
-use alloc::vec;
+
+
 
 pub type DepthType = f32;
 pub enum Units {
@@ -149,9 +149,10 @@ impl Depth {
     }
 }
 
-#[cfg(test)]
+
 mod tests {
     use super::*;
+
 
     #[test]
     fn m_to_ft() {
@@ -203,6 +204,7 @@ mod tests {
                 Depth::zero()
             });
     }
+
 
     fn with_precision(x: f32, precision: u32) -> f32 {
         let d = 10_u32.pow(precision) as f32;

@@ -1,4 +1,4 @@
-use dive_deco::{BreathingSource, DecoModel, Depth, Gas, Time};
+use dive_deco::{BreathingSource, DecoModel, Depth, GasMix, Time};
 
 pub mod fixtures;
 
@@ -6,7 +6,7 @@ pub mod fixtures;
 fn test_cns() {
     let mut model = fixtures::model_default();
 
-    let nitrox = BreathingSource::OpenCircuit(Gas::new(0.32, 0.));
+    let nitrox = BreathingSource::OpenCircuit(GasMix::new(0.32, 0.));
 
     model.record(Depth::from_meters(20.), Time::from_minutes(40.), &nitrox);
     model.record_travel_with_rate(Depth::zero(), 9., &nitrox);
@@ -19,8 +19,8 @@ fn test_cns() {
 #[test]
 fn test_cns_multi_stage() {
     let mut model = fixtures::model_default();
-    let nitrox = BreathingSource::OpenCircuit(Gas::new(0.32, 0.));
-    let air = BreathingSource::OpenCircuit(Gas::air());
+    let nitrox = BreathingSource::OpenCircuit(GasMix::new(0.32, 0.));
+    let air = BreathingSource::OpenCircuit(GasMix::air());
 
     model.record_travel_with_rate(Depth::from_meters(36.58), 12.19, &nitrox);
     model.record(Depth::from_meters(36.58), Time::from_minutes(22.), &nitrox);

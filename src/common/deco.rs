@@ -1,5 +1,11 @@
+#[cfg(feature = "alloc")]
 use alloc::vec;
+#[cfg(feature = "alloc")]
 use alloc::vec::Vec;
+#[cfg(all(feature = "heapless", not(feature = "alloc")))]
+use heapless::Vec as HeaplessVec;
+
+use crate::common::buffer::DefaultStageContainer;
 use core::fmt;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -24,6 +30,7 @@ pub enum DecoStageType {
     Ascent,
     DecoStop,
     GasSwitch,
+    ContinuousSurf,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -36,10 +43,12 @@ pub struct DecoStage {
     pub gas: BreathingSource,
 }
 
+const MAX_DECO_STAGES: usize = 256;
+
 #[derive(Clone, Debug, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Deco {
-    deco_stages: Vec<DecoStage>,
+    deco_stages: DefaultStageContainer,
     tts: Time,
     sim: bool,
 }
@@ -48,7 +57,7 @@ pub struct Deco {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct DecoRuntime {
     // runtime
-    pub deco_stages: Vec<DecoStage>,
+    pub deco_stages: DefaultStageContainer,
     // current TTS in minutes
     pub tts: Time,
     // TTS @+5 (TTS in 5 min given current depth and gas mix)
@@ -64,6 +73,7 @@ pub enum DecoCalculationError {
     CurrentGasNotInList,
     MissedDecoStopViolation,
     NoBreathableGasToSurface,
+    ExcessiveGasCount,
 }
 
 impl fmt::Display for DecoCalculationError {
@@ -84,6 +94,9 @@ impl fmt::Display for DecoCalculationError {
                     f,
                     "No available breathing source is breathable at the surface (min_ppO2)"
                 )
+            }
+            DecoCalculationError::ExcessiveGasCount => {
+                write!(f, "Too many gas mixes provided (max 16 for embedded)")
             }
         }
     }
@@ -107,21 +120,57 @@ impl Deco {
         deco.fork()
     }
 
+    /// Helper for sorting gases by O2 content at high pressure
+    fn compare_gas_eff(a: &BreathingSource, b: &BreathingSource) -> core::cmp::Ordering {
+        let x = a.calculate_pressures(10.0);
+        let y = b.calculate_pressures(10.0);
+        x.o2.partial_cmp(&y.o2).unwrap_or(core::cmp::Ordering::Equal)
+    }
+
     pub fn calc<T: DecoModel + Clone + Sim>(
         &mut self,
         deco_model: T,
-        mut gas_mixes: Vec<BreathingSource>,
+        gas_mixes: &[BreathingSource],
+    ) -> Result<DecoRuntime, DecoCalculationError> {
+        self.calc_with_hints(deco_model, gas_mixes, None)
+    }
+
+    pub fn calc_with_hints<T: DecoModel + Clone + Sim>(
+        &mut self,
+        deco_model: T,
+        gas_mixes: &[BreathingSource],
+        _hints: Option<&DecoRuntime>,
     ) -> Result<DecoRuntime, DecoCalculationError> {
         // validate gas mixes
-        Self::validate_gas_mixes(&deco_model, &gas_mixes)?;
-        // sort deco gasses by o2 content
-        // We use a high reference pressure (10 bar / 90m) to ensure CCR setpoints (e.g. 1.3)
-        // are distinguishable from OC mixes and not clamped at surface pressures.
-        gas_mixes.sort_by(|a: &BreathingSource, b: &BreathingSource| {
-            let x = a.calculate_pressures(10.0);
-            let y = b.calculate_pressures(10.0);
-            x.o2.partial_cmp(&y.o2).unwrap()
-        });
+        Self::validate_gas_mixes(&deco_model, gas_mixes)?;
+
+        // Sort gases by O2 content (using high pressure to handle CCR setpoints correctly)
+        #[cfg(feature = "alloc")]
+        let mut sorted_gases_storage;
+
+        #[cfg(all(feature = "heapless", not(feature = "alloc")))]
+        let mut sorted_gases_storage: HeaplessVec<BreathingSource, 16>;
+
+        #[cfg(feature = "alloc")]
+        {
+            sorted_gases_storage = gas_mixes.to_vec();
+            sorted_gases_storage.sort_by(Self::compare_gas_eff);
+        }
+
+        #[cfg(all(feature = "heapless", not(feature = "alloc")))]
+        {
+            sorted_gases_storage = HeaplessVec::new();
+            for gas in gas_mixes {
+                sorted_gases_storage
+                    .push(*gas)
+                    .map_err(|_| DecoCalculationError::ExcessiveGasCount)?;
+            }
+            sorted_gases_storage.sort_unstable_by(Self::compare_gas_eff);
+        }
+
+        // Get slice from storage
+        // Note: Both Vec and HeaplessVec deref to slice
+        let sorted_gases: &[BreathingSource] = &sorted_gases_storage;
 
         // run model simulation until no deco stages
         let mut sim_model: T = deco_model.clone();
@@ -137,7 +186,7 @@ impl Deco {
 
             // handle missed deco stop
             // if missed deco stop, override sim model to depth at the expected stop and rerun the calculation
-            let next_deco_action = self.next_deco_action(&sim_model, gas_mixes.clone());
+            let next_deco_action = self.next_deco_action(&sim_model, &sorted_gases);
             if let Err(e) = next_deco_action {
                 return match e {
                     DecoCalculationError::MissedDecoStopViolation => {
@@ -150,7 +199,7 @@ impl Deco {
                             Time::zero(),
                             &pre_stage_gas,
                         );
-                        self.calc(sim_model, gas_mixes)
+                        self.calc(sim_model, &sorted_gases)
                     }
                     _ => Err(e),
                 };
@@ -182,8 +231,19 @@ impl Deco {
                             );
                             let current_sim_state = sim_model.dive_state();
                             let current_sim_time = current_sim_state.time;
+                            let formatting = sim_model.config().stop_formatting();
+                            let is_continuous = formatting == DecoStopFormatting::Continuous;
+                            let in_deco = ceiling.as_meters() > 0.0;
+                            
+                            let diff = (pre_stage_depth.as_meters() - ceiling.as_meters()).abs();
+                            let stage_type = if is_continuous && in_deco && diff < 1.5 {
+                                DecoStageType::ContinuousSurf
+                            } else {
+                                DecoStageType::Ascent
+                            };
+
                             deco_stages.push(DecoStage {
-                                stage_type: DecoStageType::Ascent,
+                                stage_type,
                                 start_depth: pre_stage_depth,
                                 end_depth: current_sim_state.depth,
                                 duration: current_sim_time - pre_stage_time,
@@ -281,12 +341,19 @@ impl Deco {
                                 pre_stage_gas.min_operating_depth(sim_model.config().min_pp_o2()),
                             );
                             let stop_duration =
-                                self.find_min_stop_time(&sim_model, gas_mixes.clone(), stop_depth);
+                                self.find_min_stop_time(&sim_model, &sorted_gases, stop_depth);
 
                             sim_model.record(pre_stage_depth, stop_duration, &pre_stage_gas);
                             let sim_state = sim_model.dive_state();
+                            
+                            let stage_type = if sim_model.config().stop_formatting() == DecoStopFormatting::Continuous {
+                                DecoStageType::ContinuousSurf
+                            } else {
+                                DecoStageType::DecoStop
+                            };
+
                             deco_stages.push(DecoStage {
-                                stage_type: DecoStageType::DecoStop,
+                                stage_type,
                                 start_depth: stop_depth,
                                 end_depth: stop_depth,
                                 duration: sim_state.time - pre_stage_time,
@@ -332,7 +399,7 @@ impl Deco {
                 ..
             } = nested_sim_model.dive_state();
             nested_sim_model.record(sim_depth, Time::from_minutes(5.), &sim_gas);
-            let nested_deco = nested_sim_deco.calc(nested_sim_model, gas_mixes.clone())?;
+            let nested_deco = nested_sim_deco.calc(nested_sim_model, &sorted_gases)?;
             tts_at_5 = nested_deco.tts;
             tts_delta_at_5 = tts_at_5 - tts;
         }
@@ -348,7 +415,7 @@ impl Deco {
     fn next_deco_action(
         &self,
         sim_model: &impl DecoModel,
-        gas_mixes: Vec<BreathingSource>,
+        gas_mixes: &[BreathingSource],
     ) -> Result<(Option<DecoAction>, Option<BreathingSource>), DecoCalculationError> {
         let DiveState {
             depth: current_depth,
@@ -448,11 +515,11 @@ impl Deco {
     }
 
     /// check next deco gas in deco (the one with the lowest MOD while more oxygen-rich than current)
-    fn next_switch_gas(
+    pub fn next_switch_gas(
         &self,
         current_depth: Depth,
         current_gas: &BreathingSource,
-        gas_mixes: Vec<BreathingSource>,
+        gas_mixes: &[BreathingSource],
         surface_pressure: MbarPressure,
         water_density: f32,
     ) -> Option<BreathingSource> {
@@ -461,7 +528,7 @@ impl Deco {
         let current_gas_partial_pressures = current_gas.calculate_pressures(p_amb);
         // all potential deco gases that are more oxygen-rich than current (inc. trimix / heliox)
         // mix with the lowest MOD (by absolute o2 content) -- sorting already done in calc
-        gas_mixes.into_iter().find(|gas: &BreathingSource| {
+        gas_mixes.iter().copied().find(|gas| {
             let partial_pressures = gas.calculate_pressures(p_amb);
             partial_pressures.o2 > current_gas_partial_pressures.o2
         })
@@ -472,14 +539,23 @@ impl Deco {
         let mut push_new = true;
         let last_stage = self.deco_stages.last_mut();
         if let Some(last_stage) = last_stage {
-            if last_stage.stage_type == stage.stage_type {
+            // Only merge if stage types match, gases match, AND it's not ContinuousSurf.
+            // We want ContinuousSurf to remain as discrete points for graph plotting.
+            let is_continuous = stage.stage_type == DecoStageType::ContinuousSurf;
+
+            if !is_continuous && last_stage.stage_type == stage.stage_type && last_stage.gas == stage.gas {
                 last_stage.duration += stage.duration;
                 last_stage.end_depth = stage.end_depth;
                 push_new = false;
             }
         }
+        
         if push_new {
-            self.deco_stages.push(stage);
+            if self.deco_stages.len() < MAX_DECO_STAGES {
+                self.deco_stages.push(stage);
+            }
+            // If buffer is full, we simply don't record the stage details,
+            // but we MUST continue to accumulate TTS below.
         }
 
         // increment TTS by deco stage duration
@@ -566,7 +642,7 @@ impl Deco {
     fn find_min_stop_time<T: DecoModel + Sim + Clone>(
         &self,
         current_model: &T,
-        gas_mixes: Vec<BreathingSource>,
+        gas_mixes: &[BreathingSource],
         current_stop_depth: Depth,
     ) -> Time {
         // We want to find min time t such that next_deco_action is NOT Stop at current_depth
@@ -581,7 +657,7 @@ impl Deco {
             let state = sim.dive_state();
             sim.record(state.depth, Time::from_minutes(time_min as f32), &state.gas);
 
-            let res = self.next_deco_action(&sim, gas_mixes.clone());
+            let res = self.next_deco_action(&sim, gas_mixes);
             match res {
                 Ok((Some(action), _)) => {
                     // We are "done" with this specific stop logic if:
@@ -624,9 +700,12 @@ impl Deco {
         // Return first valid duration found (high bound of the binary search)
         // Granularity is currently in minutes.
 
+
         Time::from_minutes(high as f32)
     }
 }
+
+
 
 #[cfg(test)]
 mod tests {
@@ -733,9 +812,9 @@ mod tests {
             let res = deco.next_switch_gas(
                 current_depth,
                 &current_gas,
-                available_gas_mixes,
+                &available_gas_mixes,
                 1000,
-                1020.0,
+                1020.0f32,
             );
             assert_eq!(res, expected_switch_gas);
         }
@@ -745,7 +824,7 @@ mod tests {
     fn should_err_on_empty_gas_mixes() {
         let mut deco = Deco::default();
         let deco_model = BuhlmannModel::default();
-        let deco_res = deco.calc(deco_model, vec![]);
+        let deco_res = deco.calc(deco_model, &[]);
         assert_eq!(deco_res, Err(DecoCalculationError::EmptyGasList));
     }
 
@@ -757,7 +836,7 @@ mod tests {
         let ean50 = BreathingSource::OpenCircuit(GasMix::new(0.50, 0.));
         let tmx2135 = BreathingSource::OpenCircuit(GasMix::new(0.21, 0.35));
         deco_model.record_travel_with_rate(Depth::from_meters(40.), 10., &air);
-        let deco_res = deco.calc(deco_model, vec![ean50, tmx2135]);
+        let deco_res = deco.calc(deco_model, &[ean50, tmx2135]);
         assert_eq!(deco_res, Err(DecoCalculationError::CurrentGasNotInList));
     }
 
@@ -778,7 +857,7 @@ mod tests {
         );
 
         let mut deco_stop_depths: Vec<Depth> = vec![];
-        let deco_res = deco.calc(deco_model, vec![air, ean50]).unwrap();
+        let deco_res = deco.calc(deco_model, &[air, ean50]).unwrap();
         for deco_stage in deco_res.deco_stages {
             if deco_stage.stage_type == DecoStageType::DecoStop {
                 let deco_stop_depth = deco_stage.start_depth;
@@ -791,5 +870,31 @@ mod tests {
                 deco_stop_depths.push(deco_stop_depth);
             }
         }
+    }
+    #[test]
+    fn test_continuous_deco_merging() {
+        let mut deco = Deco::default();
+        let config = BuhlmannConfig::default()
+            .with_gradient_factors(30, 70)
+            .with_stop_formatting(DecoStopFormatting::Continuous);
+        let mut deco_model = BuhlmannModel::new(config);
+        
+        // Deep dive to pick up deco
+        let air = BreathingSource::OpenCircuit(GasMix::air());
+        deco_model.record_travel_with_rate(Depth::from_meters(40.0), 10.0, &air);
+        deco_model.record(Depth::from_meters(40.0), Time::from_minutes(30.0), &air);
+
+        let deco_res = deco.calc(deco_model, &[air]).unwrap();
+        
+        // Count ContinuousSurf stages
+        let surf_stages_count = deco_res.deco_stages.iter()
+            .filter(|s| s.stage_type == DecoStageType::ContinuousSurf)
+            .count();
+
+        // In continuous mode without merging, we expect multiple stages (one per loop iteration approx).
+        // 30 min deco -> multiple stages.
+        assert!(surf_stages_count > 1, "Expected discrete continuous surf stages (graph points), got {}", surf_stages_count);
+        // Ensure we fit within our fixed limit logic (though 30 isn't close to 256)
+        assert!(surf_stages_count < MAX_DECO_STAGES, "Stages exceeded max buffer size in test");
     }
 }

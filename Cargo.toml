@@ -13,6 +13,7 @@ categories = ["algorithms", "simulation", "science", "no-std"]
 [dependencies]
 libm = { version = "0.2.15", optional = true }
 serde = { version = "1.0", features = ["derive"], optional = true }
+heapless = { version = "0.8", optional = true }
 
 [dev-dependencies]
 criterion = { version = "0.5.1", features = ["html_reports"] }
@@ -26,6 +27,9 @@ name = "baseline_benchmark"
 harness = false
 
 [features]
-default = []
+default = ["alloc"]
+alloc = []
+heapless = ["dep:heapless"]
+embedded = ["heapless", "no-std"]
 no-std = ["dep:libm"]
 serde = ["dep:serde"]

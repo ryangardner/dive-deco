@@ -35,7 +35,7 @@ pub struct Compartment {
     // compartment'a Buhlmann params (N2 half time, n2 'a' coefficient, n2 'b' coefficient, He half time, ..)
     pub params: ZHLParams,
     // Buhlmann model config (gradient factors, surface pressure)
-    model_config: BuhlmannConfig,
+    // Removed to save space: passed in as needed
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -74,11 +74,10 @@ impl Compartment {
             m_value_raw: 0.,  // initial, recalculated later
             m_value_calc: 0., // initial, recalculated later
             min_tolerable_amb_pressure: 0.,
-            model_config,
         };
 
         // calculate initial minimal tolerable ambient pressure
-        let (_, gf_high) = compartment.model_config.gf;
+        let (_, gf_high) = model_config.gf;
         compartment.m_value_raw = compartment.m_value(p_amb, 100);
         compartment.m_value_calc = compartment.m_value_raw;
         compartment.min_tolerable_amb_pressure = compartment.min_tolerable_amb_pressure(gf_high);
@@ -129,14 +128,14 @@ impl Compartment {
     }
 
     // tissue ceiling as depth
-    pub fn ceiling(&self) -> Depth {
+    pub fn ceiling(&self, model_config: &BuhlmannConfig) -> Depth {
         use crate::common::physics::pressure_to_depth;
 
         let floor_pressure = self.min_tolerable_amb_pressure;
         let ceiling_depth = pressure_to_depth(
             floor_pressure,
-            self.model_config.surface_pressure,
-            self.model_config.water_density,
+            model_config.surface_pressure,
+            model_config.water_density,
         );
 
         ceiling_depth

@@ -9,8 +9,7 @@ use crate::{
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
-#[cfg(test)]
-use alloc::vec;
+
 
 const GF_RANGE_ERR_MSG: &str = "GF values have to be in 1-100 range";
 const GF_ORDER_ERR_MSG: &str = "GFLow can't be higher than GFHigh";

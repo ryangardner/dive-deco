@@ -3,24 +3,39 @@ use crate::common::global_types::{CeilingType, DecoStopFormatting, MbarPressure,
 use crate::common::ox_tox::OxTox;
 use crate::common::{AscentRatePerMinute, BreathingSource, Cns, Otu};
 use crate::common::{Depth, Time};
+#[cfg(feature = "alloc")]
 use alloc::string::String;
-use alloc::vec;
-use alloc::vec::Vec;
+#[cfg(all(feature = "heapless", not(feature = "alloc")))]
+use heapless::String as HString;
+
+#[cfg(feature = "alloc")]
+pub type ValidationString = String;
+#[cfg(all(feature = "heapless", not(feature = "alloc")))]
+pub type ValidationString = HString<64>;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ConfigValidationErr {
-    pub field: String,
-    pub reason: String,
+    pub field: ValidationString,
+    pub reason: ValidationString,
 }
 
 impl ConfigValidationErr {
     pub fn new(field: &str, reason: &str) -> Self {
+        #[cfg(feature = "alloc")]
+        let (f, r) = (String::from(field), String::from(reason));
+
+        #[cfg(all(feature = "heapless", not(feature = "alloc")))]
+        let (f, r) = (
+            ValidationString::try_from(field).unwrap_or_default(),
+            ValidationString::try_from(reason).unwrap_or_default()
+        );
+
         Self {
-            field: String::from(field),
-            reason: String::from(reason),
+            field: f,
+            reason: r,
         }
     }
 }
@@ -86,7 +101,7 @@ pub trait DecoModel {
     fn ceiling(&self) -> Depth;
 
     /// deco stages, TTL
-    fn deco(&self, gas_mixes: Vec<BreathingSource>) -> Result<DecoRuntime, DecoCalculationError>;
+    fn deco(&self, gas_mixes: &[BreathingSource]) -> Result<DecoRuntime, DecoCalculationError>;
 
     /// is in deco check
     fn in_deco(&self) -> bool {
@@ -95,7 +110,7 @@ pub trait DecoModel {
             CeilingType::Actual => self.ceiling() > Depth::zero(),
             CeilingType::Adaptive => {
                 let current_gas = self.dive_state().gas;
-                let runtime = self.deco(vec![current_gas]).unwrap();
+                let runtime = self.deco(&[current_gas]).unwrap();
                 let deco_stages = runtime.deco_stages;
                 deco_stages.len() > 1
             }

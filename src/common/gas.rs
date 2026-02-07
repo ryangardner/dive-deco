@@ -1,4 +1,5 @@
 use crate::common::global_types::{MbarPressure, Pressure};
+#[cfg(feature = "alloc")]
 use alloc::string::String;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -92,6 +93,7 @@ impl GasMix {
         self.fraction_he
     }
 
+    #[cfg(feature = "alloc")]
     pub fn id(&self) -> String {
         let mut s = String::new();
         let _ = core::fmt::write(
@@ -516,6 +518,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "alloc")]
     fn test_id() {
         let ean32 = GasMix::new(0.32, 0.);
         assert_eq!(ean32.id(), "32/0");
