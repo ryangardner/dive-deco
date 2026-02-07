@@ -47,7 +47,7 @@ pub fn simple_deco(c: &mut Criterion) {
     group.bench_function("40m/20min with EAN50", |b| {
         let mut model = BuhlmannModel::default();
         model.record(Depth::from_meters(40.), Time::from_minutes(20.), &air);
-        b.iter(|| black_box(model.deco(vec![air, ean50]).unwrap()));
+        b.iter(|| black_box(model.deco(&[air, ean50]).unwrap()));
     });
 
     group.finish();
@@ -65,14 +65,14 @@ pub fn complex_deco(c: &mut Criterion) {
     group.bench_function("70m/25min trimix multi-gas", |b| {
         let mut model = BuhlmannModel::default();
         model.record(Depth::from_meters(70.), Time::from_minutes(25.), &trimix);
-        b.iter(|| black_box(model.deco(vec![trimix, ean50, oxygen]).unwrap()));
+        b.iter(|| black_box(model.deco(&[trimix, ean50, oxygen]).unwrap()));
     });
 
     group.bench_function("60m/30min air with deco gases", |b| {
         let mut model = BuhlmannModel::default();
         let air = BreathingSource::OpenCircuit(GasMix::air());
         model.record(Depth::from_meters(60.), Time::from_minutes(30.), &air);
-        b.iter(|| black_box(model.deco(vec![air, ean50, oxygen]).unwrap()));
+        b.iter(|| black_box(model.deco(&[air, ean50, oxygen]).unwrap()));
     });
 
     group.finish();
@@ -233,7 +233,7 @@ pub fn dive_computer_simulation(c: &mut Criterion) {
                 model.record(Depth::from_meters(30.), Time::from_seconds(1.), &air);
                 black_box(model.ceiling());
                 black_box(model.ndl());
-                let _ = black_box(model.deco(gases.clone()));
+                let _ = black_box(model.deco(&gases));
             }
         });
     });
@@ -255,7 +255,7 @@ pub fn tts_projection(c: &mut Criterion) {
         model.record(Depth::from_meters(40.), Time::from_minutes(20.), &air);
         b.iter(|| {
             // This includes TTS@+5 calculation (automatic, not simulated)
-            black_box(model.deco(gases.clone()).unwrap());
+            black_box(model.deco(&gases).unwrap());
         });
     });
 
@@ -276,13 +276,13 @@ pub fn gas_switching(c: &mut Criterion) {
     group.bench_function("Deco with 2 gases", |b| {
         let mut model = BuhlmannModel::default();
         model.record(Depth::from_meters(40.), Time::from_minutes(20.), &air);
-        b.iter(|| black_box(model.deco(vec![air, ean50]).unwrap()));
+        b.iter(|| black_box(model.deco(&[air, ean50]).unwrap()));
     });
 
     group.bench_function("Deco with 5 gases", |b| {
         let mut model = BuhlmannModel::default();
         model.record(Depth::from_meters(40.), Time::from_minutes(20.), &air);
-        b.iter(|| black_box(model.deco(vec![air, ean32, ean50, ean80, oxygen]).unwrap()));
+        b.iter(|| black_box(model.deco(&[air, ean32, ean50, ean80, oxygen]).unwrap()));
     });
 
     group.finish();
@@ -320,7 +320,7 @@ pub fn full_dive_profile(c: &mut Criterion) {
             model.record(Depth::from_meters(21.), Time::zero(), &ean50);
 
             // Continue ascent with deco
-            let deco = model.deco(gases.clone()).unwrap();
+            let deco = model.deco(&gases).unwrap();
 
             // Various checks
             black_box(model.ceiling());
