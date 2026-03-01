@@ -265,7 +265,26 @@ impl DecoModel for BuhlmannModel {
         ceiling
     }
 
-    fn deco(&self, gas_mixes: &[BreathingSource]) -> Result<DecoRuntime, DecoCalculationError> {
+    fn surface_gf(&self) -> f32 {
+        let surface_p = self.config.surface_pressure();
+        let current_p = crate::common::physics::depth_to_pressure(
+            self.state.depth,
+            surface_p,
+            self.config.water_density,
+        );
+        
+        let mut max_gf: f32 = 0.0;
+        let surface_p_bar = surface_p as f32 / 1000.0;
+        for c in &self.compartments {
+            let ss = c.supersaturation(current_p, surface_p_bar);
+            if ss.gf_surf > max_gf {
+                max_gf = ss.gf_surf;
+            }
+        }
+        max_gf
+    }
+
+    fn deco(&self, gas_mixes: &[BreathingSource], _include_safety_stop: bool) -> Result<DecoRuntime, DecoCalculationError> {
         let mut deco = Deco::default();
         deco.calc(self.fork(), gas_mixes)
     }

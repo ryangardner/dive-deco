@@ -13,7 +13,7 @@ fn test_hypoxic_ascent_limit() {
     let config = BuhlmannConfig::default();
     let mut model = BuhlmannModel::new(config);
 
-    let hypoxic_gas = BreathingSource::OpenCircuit(GasMix::new(0.10, 0.50));
+    let hypoxic_gas = BreathingSource::OpenCircuit(GasMix::try_new(0.10, 0.50).unwrap());
 
     // Dive to 50m
     model.record_travel_with_rate(Depth::from_meters(50.), 10., &hypoxic_gas);

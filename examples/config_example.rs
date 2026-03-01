@@ -24,6 +24,11 @@ fn main() {
         switch_at_stop_only: true,
         max_end_depth: Depth::from_meters(30.0),
         deco_stop_increment: Depth::from_meters(3.0),
+        safety_stop_duration: Time::from_minutes(3.0),
+        safety_stop_depth: Depth::from_meters(5.0),
+        safety_stop_trigger_depth: Depth::from_meters(10.0),
+        max_pp_o2_normal: 1.4,
+        max_pp_o2_deco: 1.6,
     };
     let model_2 = BuhlmannModel::new(config_instance);
     println!("{:?}", model_2.config());

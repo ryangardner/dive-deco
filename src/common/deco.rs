@@ -22,6 +22,7 @@ enum DecoAction {
     AscentToGasSwitchDepth,
     SwitchGas,
     Stop,
+    SafetyStop,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -30,6 +31,7 @@ pub enum DecoStageType {
     Ascent,
     DecoStop,
     GasSwitch,
+    SafetyStop,
     ContinuousSurf,
 }
 
@@ -64,6 +66,37 @@ pub struct DecoRuntime {
     pub tts_at_5: Time,
     // TTS Δ+5 (absolute change in TTS after 5 mins given current depth and gas mix)
     pub tts_delta_at_5: Time,
+}
+
+impl DecoRuntime {
+    /// Returns the total volume of gas (in liters) required to complete the deco profile.
+    /// Average depth is used for each stage to approximate consumption.
+    pub fn calculate_gas_needs(&self, surface_pressure_mbar: u16, rmv_l_min: f32) -> f32 {
+        self.deco_stages.iter().map(|stage| {
+            // Use average depth for the stage
+            let avg_depth_m = (stage.start_depth.as_meters() + stage.end_depth.as_meters()) / 2.0;
+            let avg_depth = Depth::from_meters(avg_depth_m);
+            stage.gas.calculate_usage(avg_depth, surface_pressure_mbar, rmv_l_min, stage.duration.as_minutes())
+        }).sum()
+    }
+
+    /// Returns the volume of gas required for each mix used in the profile.
+    #[cfg(feature = "alloc")]
+    pub fn calculate_gas_needs_per_gas(&self, surface_pressure_mbar: u16, rmv_l_min: f32) -> Vec<(crate::common::BreathingSource, f32)> {
+        let mut results: Vec<(crate::common::BreathingSource, f32)> = Vec::new();
+        for stage in self.deco_stages.iter() {
+            let avg_depth_m = (stage.start_depth.as_meters() + stage.end_depth.as_meters()) / 2.0;
+            let avg_depth = Depth::from_meters(avg_depth_m);
+            let usage = stage.gas.calculate_usage(avg_depth, surface_pressure_mbar, rmv_l_min, stage.duration.as_minutes());
+            
+            if let Some(entry) = results.iter_mut().find(|(s, _)| s == &stage.gas) {
+                entry.1 += usage;
+            } else {
+                results.push((stage.gas, usage));
+            }
+        }
+        results
+    }
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -174,6 +207,9 @@ impl Deco {
 
         // run model simulation until no deco stages
         let mut sim_model: T = deco_model.clone();
+        let initial_depth = sim_model.dive_state().depth;
+        let mut mandatory_deco_performed = false;
+        let mut safety_stop_performed = false;
         let ascent_rate = sim_model.config().deco_ascent_rate();
         loop {
             let DiveState {
@@ -186,28 +222,50 @@ impl Deco {
 
             // handle missed deco stop
             // if missed deco stop, override sim model to depth at the expected stop and rerun the calculation
-            let next_deco_action = self.next_deco_action(&sim_model, &sorted_gases);
-            if let Err(e) = next_deco_action {
-                return match e {
-                    DecoCalculationError::MissedDecoStopViolation => {
-                        sim_model.record(
-                            self.deco_stop_depth(
-                                &sim_model.config(),
-                                ceiling,
-                                pre_stage_gas.min_operating_depth(sim_model.config().min_pp_o2()),
-                            ),
-                            Time::zero(),
-                            &pre_stage_gas,
-                        );
-                        self.calc(sim_model, &sorted_gases)
+            // handle missed deco stop
+            // if missed deco stop, override sim model to depth at the expected stop and rerun the calculation
+            let (mut deco_action, next_switch_gas) = match self.next_deco_action(&sim_model, &sorted_gases) {
+                Ok(res) => res,
+                Err(DecoCalculationError::MissedDecoStopViolation) => {
+                     sim_model.record(
+                        self.deco_stop_depth(
+                            &sim_model.config(),
+                            ceiling,
+                            pre_stage_gas.min_operating_depth(sim_model.config().min_pp_o2()),
+                        ),
+                        Time::zero(),
+                        &pre_stage_gas,
+                    );
+                    return self.calc(sim_model, &sorted_gases);
+                }
+                Err(e) => return Err(e),
+            };
+
+            // detailed safety stop check
+            if let Some(DecoAction::AscentToCeil) = deco_action {
+                let stop_depth_chk = self.deco_stop_depth(
+                    &sim_model.config(),
+                    ceiling,
+                    pre_stage_gas.min_operating_depth(sim_model.config().min_pp_o2()),
+                );
+                
+                if stop_depth_chk <= Depth::zero() {
+                    let config = sim_model.config();
+                    let trigger = config.safety_stop_trigger_depth();
+                    let safety_depth = config.safety_stop_depth();
+
+                    if !mandatory_deco_performed 
+                        && !safety_stop_performed
+                        && initial_depth > trigger
+                        && pre_stage_depth > safety_depth
+                    {
+                        deco_action = Some(DecoAction::SafetyStop);
                     }
-                    _ => Err(e),
-                };
+                }
             }
 
             // handle deco actions
             let mut deco_stages: Vec<DecoStage> = vec![];
-            let (deco_action, next_switch_gas) = next_deco_action.unwrap();
             match deco_action {
                 // deco obligation cleared
                 None => {
@@ -358,8 +416,44 @@ impl Deco {
                                 end_depth: stop_depth,
                                 duration: sim_state.time - pre_stage_time,
                                 gas: sim_state.gas,
-                            })
+                            });
+                            
+                            mandatory_deco_performed = true;
                         }
+
+                        DecoAction::SafetyStop => {
+                             let stop_depth = sim_model.config().safety_stop_depth();
+                             let duration = sim_model.config().safety_stop_duration();
+                             
+                             // ascent to stop
+                             sim_model.record_travel_with_rate(stop_depth, ascent_rate, &pre_stage_gas);
+                             let arrived_state = sim_model.dive_state();
+                             
+                             // Only verify if we actually ascended
+                             if (arrived_state.depth - pre_stage_depth).as_meters().abs() > 0.1 {
+                                 deco_stages.push(DecoStage {
+                                     stage_type: DecoStageType::Ascent,
+                                     start_depth: pre_stage_depth,
+                                     end_depth: arrived_state.depth,
+                                     duration: arrived_state.time - pre_stage_time,
+                                     gas: pre_stage_gas,
+                                 });
+                             }
+
+                             // stop
+                             sim_model.record(stop_depth, duration, &pre_stage_gas);
+                             let done_state = sim_model.dive_state();
+                             deco_stages.push(DecoStage {
+                                 stage_type: DecoStageType::SafetyStop,
+                                 start_depth: stop_depth,
+                                 end_depth: stop_depth,
+                                 duration: done_state.time - arrived_state.time,
+                                 gas: pre_stage_gas,
+                             });
+
+                             safety_stop_performed = true;
+                        }
+                        
                     }
                 }
             }
@@ -738,9 +832,9 @@ mod tests {
     #[test]
     fn test_next_switch_gas() {
         let air = BreathingSource::OpenCircuit(GasMix::air());
-        let ean_50 = BreathingSource::OpenCircuit(GasMix::new(0.5, 0.));
-        let oxygen = BreathingSource::OpenCircuit(GasMix::new(1., 0.));
-        let trimix = BreathingSource::OpenCircuit(GasMix::new(0.5, 0.2));
+        let ean_50 = BreathingSource::OpenCircuit(GasMix::try_new(0.5, 0.).unwrap());
+        let oxygen = BreathingSource::OpenCircuit(GasMix::try_new(1., 0.).unwrap());
+        let trimix = BreathingSource::OpenCircuit(GasMix::try_new(0.5, 0.2).unwrap());
 
         // potential switch if in deco!
         // [ (current_depth, current_gas, gas_mixes, expected_result) ]
@@ -833,8 +927,8 @@ mod tests {
         let mut deco = Deco::default();
         let mut deco_model = BuhlmannModel::default();
         let air = BreathingSource::OpenCircuit(GasMix::air());
-        let ean50 = BreathingSource::OpenCircuit(GasMix::new(0.50, 0.));
-        let tmx2135 = BreathingSource::OpenCircuit(GasMix::new(0.21, 0.35));
+        let ean50 = BreathingSource::OpenCircuit(GasMix::try_new(0.50, 0.).unwrap());
+        let tmx2135 = BreathingSource::OpenCircuit(GasMix::try_new(0.21, 0.35).unwrap());
         deco_model.record_travel_with_rate(Depth::from_meters(40.), 10., &air);
         let deco_res = deco.calc(deco_model, &[ean50, tmx2135]);
         assert_eq!(deco_res, Err(DecoCalculationError::CurrentGasNotInList));
@@ -846,14 +940,14 @@ mod tests {
         let mut deco_model =
             BuhlmannModel::new(BuhlmannConfig::default().with_gradient_factors(30, 70));
         let air = BreathingSource::OpenCircuit(GasMix::air());
-        let ean50 = BreathingSource::OpenCircuit(GasMix::new(0.50, 0.));
+        let ean50 = BreathingSource::OpenCircuit(GasMix::try_new(0.50, 0.).unwrap());
         deco_model.record_travel_with_rate(Depth::from_meters(40.), 10., &air);
         deco_model.record(Depth::from_meters(40.), Time::from_minutes(27.), &air);
         deco_model.record_travel_with_rate(Depth::from_meters(16.), 10., &air);
         deco_model.record(
             Depth::from_meters(16.),
             Time::from_minutes(1.),
-            &BreathingSource::OpenCircuit(GasMix::new(0.50, 0.)),
+            &BreathingSource::OpenCircuit(GasMix::try_new(0.50, 0.).unwrap()),
         );
 
         let mut deco_stop_depths: Vec<Depth> = vec![];

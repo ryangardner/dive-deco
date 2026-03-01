@@ -3,7 +3,7 @@ use dive_deco::{BreathingSource, BuhlmannConfig, BuhlmannModel, DecoModel, Depth
 fn main() {
     let mut model = BuhlmannModel::new(BuhlmannConfig::default());
 
-    let nitrox_32 = BreathingSource::OpenCircuit(GasMix::new(0.32, 0.));
+    let nitrox_32 = BreathingSource::OpenCircuit(GasMix::try_new(0.32, 0.).unwrap());
 
     // ceiling after 20 min at 20 meters using EAN32 - ceiling at 0m
     model.record(Depth::from_meters(20.), Time::from_minutes(20.), &nitrox_32);

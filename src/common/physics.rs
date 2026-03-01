@@ -9,9 +9,11 @@ pub type WaterDensity = f32;
 /// Common water density constants
 pub mod density {
     /// Fresh water density (approx 1000 kg/m^3)
+    #[allow(dead_code)]
     pub const FRESH: super::WaterDensity = 1000.0;
     /// Salt water density (approx 1020 kg/m^3)
     /// This is the default used to match previous `depth/10` approximation
+    #[allow(dead_code)]
     pub const SALT: super::WaterDensity = 1020.0;
     /// EN13319 standard density (1030 kg/m^3)
     pub const EN13319: super::WaterDensity = 1030.0;

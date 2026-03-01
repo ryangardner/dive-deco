@@ -50,10 +50,15 @@ pub trait DecoModelConfig {
     fn stop_formatting(&self) -> DecoStopFormatting;
     fn last_stop_depth(&self) -> Depth;
     fn min_pp_o2(&self) -> Pressure;
+    fn max_pp_o2_normal(&self) -> Pressure;
+    fn max_pp_o2_deco(&self) -> Pressure;
     fn gas_switch_duration(&self) -> Time;
     fn switch_at_stop_only(&self) -> bool;
     fn max_end_depth(&self) -> Depth;
     fn deco_stop_increment(&self) -> Depth;
+    fn safety_stop_duration(&self) -> Time;
+    fn safety_stop_depth(&self) -> Depth;
+    fn safety_stop_trigger_depth(&self) -> Depth;
 }
 
 #[derive(Debug, Clone)]
@@ -100,8 +105,11 @@ pub trait DecoModel {
     /// current decompression ceiling in meters
     fn ceiling(&self) -> Depth;
 
+    /// current gradient factor at surface
+    fn surface_gf(&self) -> f32;
+
     /// deco stages, TTL
-    fn deco(&self, gas_mixes: &[BreathingSource]) -> Result<DecoRuntime, DecoCalculationError>;
+    fn deco(&self, gas_mixes: &[BreathingSource], include_safety_stop: bool) -> Result<DecoRuntime, DecoCalculationError>;
 
     /// is in deco check
     fn in_deco(&self) -> bool {
@@ -110,9 +118,13 @@ pub trait DecoModel {
             CeilingType::Actual => self.ceiling() > Depth::zero(),
             CeilingType::Adaptive => {
                 let current_gas = self.dive_state().gas;
-                let runtime = self.deco(&[current_gas]).unwrap();
-                let deco_stages = runtime.deco_stages;
-                deco_stages.len() > 1
+                match self.deco(&[current_gas], false) {
+                    Ok(runtime) => runtime
+                        .deco_stages
+                        .iter()
+                        .any(|s| s.stage_type == crate::common::deco::DecoStageType::DecoStop),
+                    Err(_) => true, // Conservatively assume in deco if calc fails
+                }
             }
         }
     }

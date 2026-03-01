@@ -5,7 +5,7 @@ fn main() {
     let config = BuhlmannConfig::default();
     let mut model = BuhlmannModel::new(config);
 
-    let air = BreathingSource::OpenCircuit(GasMix::new(0.21, 0.));
+    let air = BreathingSource::OpenCircuit(GasMix::try_new(0.21, 0.).unwrap());
     let depth = Depth::from_meters(30.);
     let bottom_time = Time::from_minutes(10.);
 

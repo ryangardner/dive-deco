@@ -9,6 +9,7 @@ mod ox_tox;
 mod record;
 mod sim;
 pub mod buffer;
+pub mod planning;
 
 mod time;
 // CCR module
@@ -21,7 +22,7 @@ pub use deco_model::{ConfigValidationErr, DecoModel, DecoModelConfig, DiveState}
 pub use depth::{Depth, Unit, Units};
 pub use time::Time;
 
-pub use gas::{BreathingSource, Gas, GasMix, InertGas, PartialPressures};
+pub use gas::{BreathingSource, GasError, GasMix, InertGas, PartialPressures};
 pub use global_types::{
     AscentRatePerMinute, CeilingType, Cns, DecoStopFormatting, DepthType, GradientFactor,
     GradientFactors, MbarPressure, NDLType, Otu, Pressure,

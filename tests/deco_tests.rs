@@ -9,11 +9,15 @@ pub mod fixtures;
 fn test_deco_ascent_no_deco() {
     let air = BreathingSource::OpenCircuit(fixtures::gas_air());
     let mut model = fixtures::model_default();
+    // Disable safety stop for this test to match legacy behavior of "no deco"
+    let config = model.config().with_safety_stop_trigger_depth(Depth::from_meters(100.0));
+    model = BuhlmannModel::new(config);
+
     model.record(Depth::from_meters(20.), Time::from_minutes(5.), &air);
 
     let DecoRuntime {
         deco_stages, tts, ..
-    } = model.deco(&[air]).unwrap();
+    } = model.deco(&[air], false).unwrap();
     assert_eq!(deco_stages.len(), 1); // single continuous ascent
     assert_eq!(tts, Time::from_minutes(2.)); // tts in minutes
 }
@@ -26,7 +30,7 @@ fn test_deco_single_gas() {
 
     let DecoRuntime {
         deco_stages, tts, ..
-    } = model.deco(&[air]).unwrap();
+    } = model.deco(&[air], false).unwrap();
 
     assert!(
         (tts.as_seconds() - 806.666).abs() < 1.0,
@@ -80,14 +84,14 @@ fn test_deco_single_gas() {
 fn test_deco_multi_gas() {
     let mut model = BuhlmannModel::new(BuhlmannConfig::default().with_deco_ascent_rate(9.));
 
-    let air = BreathingSource::OpenCircuit(GasMix::new(0.21, 0.));
-    let ean_50 = BreathingSource::OpenCircuit(GasMix::new(0.50, 0.));
+    let air = BreathingSource::OpenCircuit(GasMix::try_new(0.21, 0.).unwrap());
+    let ean_50 = BreathingSource::OpenCircuit(GasMix::try_new(0.50, 0.).unwrap());
 
     model.record(Depth::from_meters(40.), Time::from_minutes(20.), &air);
 
     let DecoRuntime {
         deco_stages, tts, ..
-    } = model.deco(&[air, ean_50]).unwrap();
+    } = model.deco(&[air, ean_50], false).unwrap();
 
     let expected_deco_stages = vec![
         DecoStage {
@@ -139,13 +143,13 @@ fn test_deco_multi_gas() {
 fn test_deco_with_deco_mod_at_bottom() {
     let mut model = BuhlmannModel::new(BuhlmannConfig::default().with_deco_ascent_rate(9.));
     let air = BreathingSource::OpenCircuit(GasMix::air());
-    let ean_36 = BreathingSource::OpenCircuit(GasMix::new(0.36, 0.));
+    let ean_36 = BreathingSource::OpenCircuit(GasMix::try_new(0.36, 0.).unwrap());
 
     model.record(Depth::from_meters(30.), Time::from_minutes(30.), &air);
 
     let DecoRuntime {
         deco_stages, tts, ..
-    } = model.deco(&[air, ean_36]).unwrap();
+    } = model.deco(&[air, ean_36], false).unwrap();
 
     let expected_deco_stages = vec![
         DecoStage {
@@ -189,12 +193,12 @@ fn test_deco_with_deco_mod_at_bottom() {
 fn test_tts_delta() {
     let mut model = fixtures::model_gf((30, 70));
     let air = BreathingSource::OpenCircuit(GasMix::air());
-    let ean_50 = BreathingSource::OpenCircuit(GasMix::new(0.5, 0.));
+    let ean_50 = BreathingSource::OpenCircuit(GasMix::try_new(0.5, 0.).unwrap());
     let gas_mixes = vec![air, ean_50];
     model.record(Depth::from_meters(40.), Time::from_minutes(20.), &air);
-    let deco_1 = model.deco(&gas_mixes).unwrap();
+    let deco_1 = model.deco(&gas_mixes, false).unwrap();
     model.record(Depth::from_meters(40.), Time::from_minutes(5.), &air);
-    let deco_2 = model.deco(&gas_mixes).unwrap();
+    let deco_2 = model.deco(&gas_mixes, false).unwrap();
     assert_eq!(deco_1.tts_at_5, deco_2.tts);
     assert_eq!(deco_1.tts_delta_at_5, deco_2.tts - deco_1.tts);
 }
@@ -202,7 +206,7 @@ fn test_tts_delta() {
 #[test]
 fn test_runtime_on_missed_stop() {
     let air = BreathingSource::OpenCircuit(GasMix::air());
-    let ean_50 = BreathingSource::OpenCircuit(GasMix::new(0.50, 0.));
+    let ean_50 = BreathingSource::OpenCircuit(GasMix::try_new(0.50, 0.).unwrap());
     let available_gas_mixes = vec![air, ean_50];
 
     let configs = vec![
@@ -218,18 +222,18 @@ fn test_runtime_on_missed_stop() {
         let mut model = BuhlmannModel::new(config);
         model.record(Depth::from_meters(40.), Time::from_minutes(30.), &air);
         model.record(Depth::from_meters(22.), Time::zero(), &air);
-        let initial_deco = model.deco(&available_gas_mixes).unwrap();
+        let initial_deco = model.deco(&available_gas_mixes, false).unwrap();
         // 21
         let initial_deco_stop_depth = get_first_deco_stop_depth(initial_deco);
 
         // between stop and ceiling (18 - 21)
         model.record(Depth::from_meters(20.), Time::zero(), &air);
-        let between_deco = model.deco(&available_gas_mixes).unwrap();
+        let between_deco = model.deco(&available_gas_mixes, false).unwrap();
         let between_deco_stop_depth = get_first_deco_stop_depth(between_deco);
 
         // below
         model.record(Depth::from_meters(15.), Time::zero(), &air);
-        let below_deco = model.deco(&available_gas_mixes).unwrap();
+        let below_deco = model.deco(&available_gas_mixes, false).unwrap();
         let below_deco_stop_depth = get_first_deco_stop_depth(below_deco);
 
         assert_eq!(
@@ -250,11 +254,11 @@ fn test_deco_runtime_integrity() {
         .with_ceiling_type(CeilingType::Adaptive);
     let mut model = BuhlmannModel::new(config);
     let air = BreathingSource::OpenCircuit(GasMix::air());
-    let ean_50 = BreathingSource::OpenCircuit(GasMix::new(0.50, 0.));
-    let oxygen = BreathingSource::OpenCircuit(GasMix::new(1., 0.));
+    let ean_50 = BreathingSource::OpenCircuit(GasMix::try_new(0.50, 0.).unwrap());
+    let oxygen = BreathingSource::OpenCircuit(GasMix::try_new(1., 0.).unwrap());
     model.record(Depth::from_meters(40.), Time::from_minutes(20.), &air);
 
-    let deco_runtime = model.deco(&[air, ean_50, oxygen]).unwrap();
+    let deco_runtime = model.deco(&[air, ean_50, oxygen], false).unwrap();
     let deco_stages = deco_runtime.deco_stages;
 
     deco_stages.iter().reduce(|a, b| {
@@ -334,7 +338,7 @@ fn test_deco_formatting_modes() {
     model_base.record(Depth::from_meters(40.), Time::from_minutes(25.), &air);
 
     // 1. Metric (Default) - expect 3m stops
-    let deco_metric = model_base.deco(&[air]).unwrap();
+    let deco_metric = model_base.deco(&[air], false).unwrap();
     let first_stop_metric = get_first_deco_stop_depth(deco_metric).unwrap();
     assert!((first_stop_metric.as_meters() % 3.0).abs() < 1e-6);
 
@@ -346,7 +350,7 @@ fn test_deco_formatting_modes() {
     // Copy state (simplification for test)
     let mut model_imperial_ready = model_imperial;
     model_imperial_ready.record(Depth::from_meters(40.), Time::from_minutes(25.), &air);
-    let deco_imperial = model_imperial_ready.deco(&[air]).unwrap();
+    let deco_imperial = model_imperial_ready.deco(&[air], false).unwrap();
     let first_stop_imperial = get_first_deco_stop_depth(deco_imperial).unwrap();
     assert!((first_stop_imperial.as_feet() % 10.0).abs() < 1e-6);
 
@@ -357,7 +361,7 @@ fn test_deco_formatting_modes() {
     let model_continuous = BuhlmannModel::new(config_continuous);
     let mut model_continuous_ready = model_continuous;
     model_continuous_ready.record(Depth::from_meters(40.), Time::from_minutes(25.), &air);
-    let deco_continuous = model_continuous_ready.deco(&[air]).unwrap();
+    let deco_continuous = model_continuous_ready.deco(&[air], false).unwrap();
     let first_stop_continuous = get_first_deco_stop_depth(deco_continuous).unwrap();
 
     // Exact ceiling is unlikely to be exactly on a 3m/10ft boundary
@@ -374,7 +378,7 @@ fn test_deco_last_stop_depth() {
     let mut model = BuhlmannModel::new(config);
     model.record(Depth::from_meters(30.), Time::from_minutes(40.), &air);
 
-    let deco = model.deco(&[air]).unwrap();
+    let deco = model.deco(&[air], false).unwrap();
 
     // The very last deco stop (before ascent to surface) should be at 6m
     let deco_stops: Vec<_> = deco
@@ -389,8 +393,8 @@ fn test_deco_last_stop_depth() {
 
 #[test]
 fn test_gas_switch_duration_impact() {
-    let air = BreathingSource::OpenCircuit(GasMix::new(0.21, 0.));
-    let ean_50 = BreathingSource::OpenCircuit(GasMix::new(0.50, 0.));
+    let air = BreathingSource::OpenCircuit(GasMix::try_new(0.21, 0.).unwrap());
+    let ean_50 = BreathingSource::OpenCircuit(GasMix::try_new(0.50, 0.).unwrap());
     let gas_mixes = vec![air, ean_50];
 
     // Profile: 40m for 20min
@@ -405,7 +409,7 @@ fn test_gas_switch_duration_impact() {
             .with_gas_switch_duration(2.0),
     );
     dive_action(&mut model_with_duration);
-    let deco_with = model_with_duration.deco(&gas_mixes).unwrap();
+    let deco_with = model_with_duration.deco(&gas_mixes, false).unwrap();
 
     // 2. Without switch duration (0 min)
     let mut model_without_duration = BuhlmannModel::new(
@@ -414,7 +418,7 @@ fn test_gas_switch_duration_impact() {
             .with_gas_switch_duration(0.0),
     );
     dive_action(&mut model_without_duration);
-    let deco_without = model_without_duration.deco(&gas_mixes).unwrap();
+    let deco_without = model_without_duration.deco(&gas_mixes, false).unwrap();
 
     println!("TTS with duration: {:?}", deco_with.tts);
     println!("TTS without duration: {:?}", deco_without.tts);
@@ -450,8 +454,8 @@ fn test_gas_switch_duration_impact() {
 
 #[test]
 fn test_switch_at_stop_only() {
-    let air = BreathingSource::OpenCircuit(GasMix::new(0.21, 0.));
-    let ean_50 = BreathingSource::OpenCircuit(GasMix::new(0.50, 0.));
+    let air = BreathingSource::OpenCircuit(GasMix::try_new(0.21, 0.).unwrap());
+    let ean_50 = BreathingSource::OpenCircuit(GasMix::try_new(0.50, 0.).unwrap());
     let gas_mixes = vec![air, ean_50];
 
     // Profile: 40m for 20min
@@ -467,7 +471,7 @@ fn test_switch_at_stop_only() {
             .with_switch_at_stop_only(false),
     );
     dive_action(&mut model_anywhere);
-    let deco_anywhere = model_anywhere.deco(&gas_mixes).unwrap();
+    let deco_anywhere = model_anywhere.deco(&gas_mixes, false).unwrap();
 
     let switch_stage_anywhere = deco_anywhere
         .deco_stages
@@ -485,7 +489,7 @@ fn test_switch_at_stop_only() {
             .with_switch_at_stop_only(true),
     );
     dive_action(&mut model_stop_only);
-    let deco_stop_only = model_stop_only.deco(&gas_mixes).unwrap();
+    let deco_stop_only = model_stop_only.deco(&gas_mixes, false).unwrap();
 
     let switch_stage_stop_only = deco_stop_only
         .deco_stages

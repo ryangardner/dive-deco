@@ -42,12 +42,12 @@ pub fn simple_deco(c: &mut Criterion) {
     let mut group = c.benchmark_group("Simple Deco");
 
     let air = BreathingSource::OpenCircuit(GasMix::air());
-    let ean50 = BreathingSource::OpenCircuit(GasMix::new(0.50, 0.));
+    let ean50 = BreathingSource::OpenCircuit(GasMix::try_new(0.50, 0.).unwrap());
 
     group.bench_function("40m/20min with EAN50", |b| {
         let mut model = BuhlmannModel::default();
         model.record(Depth::from_meters(40.), Time::from_minutes(20.), &air);
-        b.iter(|| black_box(model.deco(&[air, ean50]).unwrap()));
+        b.iter(|| black_box(model.deco(&[air, ean50], false).unwrap()));
     });
 
     group.finish();
@@ -58,21 +58,21 @@ pub fn simple_deco(c: &mut Criterion) {
 pub fn complex_deco(c: &mut Criterion) {
     let mut group = c.benchmark_group("Complex Deco");
 
-    let trimix = BreathingSource::OpenCircuit(GasMix::new(0.18, 0.45));
-    let ean50 = BreathingSource::OpenCircuit(GasMix::new(0.50, 0.));
-    let oxygen = BreathingSource::OpenCircuit(GasMix::new(1.0, 0.));
+    let trimix = BreathingSource::OpenCircuit(GasMix::try_new(0.18, 0.45).unwrap());
+    let ean50 = BreathingSource::OpenCircuit(GasMix::try_new(0.50, 0.).unwrap());
+    let oxygen = BreathingSource::OpenCircuit(GasMix::try_new(1.0, 0.).unwrap());
 
     group.bench_function("70m/25min trimix multi-gas", |b| {
         let mut model = BuhlmannModel::default();
         model.record(Depth::from_meters(70.), Time::from_minutes(25.), &trimix);
-        b.iter(|| black_box(model.deco(&[trimix, ean50, oxygen]).unwrap()));
+        b.iter(|| black_box(model.deco(&[trimix, ean50, oxygen], false).unwrap()));
     });
 
     group.bench_function("60m/30min air with deco gases", |b| {
         let mut model = BuhlmannModel::default();
         let air = BreathingSource::OpenCircuit(GasMix::air());
         model.record(Depth::from_meters(60.), Time::from_minutes(30.), &air);
-        b.iter(|| black_box(model.deco(&[air, ean50, oxygen]).unwrap()));
+        b.iter(|| black_box(model.deco(&[air, ean50, oxygen], false).unwrap()));
     });
 
     group.finish();
@@ -220,7 +220,7 @@ pub fn dive_computer_simulation(c: &mut Criterion) {
     let mut group = c.benchmark_group("Dive Computer Simulation");
 
     let air = BreathingSource::OpenCircuit(GasMix::air());
-    let ean50 = BreathingSource::OpenCircuit(GasMix::new(0.50, 0.));
+    let ean50 = BreathingSource::OpenCircuit(GasMix::try_new(0.50, 0.).unwrap());
     let gases = vec![air, ean50];
 
     group.bench_function("1 minute of dive updates", |b| {
@@ -233,7 +233,7 @@ pub fn dive_computer_simulation(c: &mut Criterion) {
                 model.record(Depth::from_meters(30.), Time::from_seconds(1.), &air);
                 black_box(model.ceiling());
                 black_box(model.ndl());
-                let _ = black_box(model.deco(&gases));
+                let _ = black_box(model.deco(&gases, false));
             }
         });
     });
@@ -247,7 +247,7 @@ pub fn tts_projection(c: &mut Criterion) {
     let mut group = c.benchmark_group("TTS Projection");
 
     let air = BreathingSource::OpenCircuit(GasMix::air());
-    let ean50 = BreathingSource::OpenCircuit(GasMix::new(0.50, 0.));
+    let ean50 = BreathingSource::OpenCircuit(GasMix::try_new(0.50, 0.).unwrap());
     let gases = vec![air, ean50];
 
     group.bench_function("Deco with TTS@+5 (nested sim)", |b| {
@@ -255,7 +255,7 @@ pub fn tts_projection(c: &mut Criterion) {
         model.record(Depth::from_meters(40.), Time::from_minutes(20.), &air);
         b.iter(|| {
             // This includes TTS@+5 calculation (automatic, not simulated)
-            black_box(model.deco(&gases).unwrap());
+            black_box(model.deco(&gases, false).unwrap());
         });
     });
 
@@ -268,21 +268,21 @@ pub fn gas_switching(c: &mut Criterion) {
     let mut group = c.benchmark_group("GasMix Switching");
 
     let air = BreathingSource::OpenCircuit(GasMix::air());
-    let ean32 = BreathingSource::OpenCircuit(GasMix::new(0.32, 0.));
-    let ean50 = BreathingSource::OpenCircuit(GasMix::new(0.50, 0.));
-    let ean80 = BreathingSource::OpenCircuit(GasMix::new(0.80, 0.));
-    let oxygen = BreathingSource::OpenCircuit(GasMix::new(1.0, 0.));
+    let ean32 = BreathingSource::OpenCircuit(GasMix::try_new(0.32, 0.).unwrap());
+    let ean50 = BreathingSource::OpenCircuit(GasMix::try_new(0.50, 0.).unwrap());
+    let ean80 = BreathingSource::OpenCircuit(GasMix::try_new(0.80, 0.).unwrap());
+    let oxygen = BreathingSource::OpenCircuit(GasMix::try_new(1.0, 0.).unwrap());
 
     group.bench_function("Deco with 2 gases", |b| {
         let mut model = BuhlmannModel::default();
         model.record(Depth::from_meters(40.), Time::from_minutes(20.), &air);
-        b.iter(|| black_box(model.deco(&[air, ean50]).unwrap()));
+        b.iter(|| black_box(model.deco(&[air, ean50], false).unwrap()));
     });
 
     group.bench_function("Deco with 5 gases", |b| {
         let mut model = BuhlmannModel::default();
         model.record(Depth::from_meters(40.), Time::from_minutes(20.), &air);
-        b.iter(|| black_box(model.deco(&[air, ean32, ean50, ean80, oxygen]).unwrap()));
+        b.iter(|| black_box(model.deco(&[air, ean32, ean50, ean80, oxygen], false).unwrap()));
     });
 
     group.finish();
@@ -293,9 +293,9 @@ pub fn gas_switching(c: &mut Criterion) {
 pub fn full_dive_profile(c: &mut Criterion) {
     let mut group = c.benchmark_group("Full Dive Profile");
 
-    let trimix = BreathingSource::OpenCircuit(GasMix::new(0.18, 0.45));
-    let ean50 = BreathingSource::OpenCircuit(GasMix::new(0.50, 0.));
-    let oxygen = BreathingSource::OpenCircuit(GasMix::new(1.0, 0.));
+    let trimix = BreathingSource::OpenCircuit(GasMix::try_new(0.18, 0.45).unwrap());
+    let ean50 = BreathingSource::OpenCircuit(GasMix::try_new(0.50, 0.).unwrap());
+    let oxygen = BreathingSource::OpenCircuit(GasMix::try_new(1.0, 0.).unwrap());
     let gases = vec![oxygen, trimix, ean50];
 
     group.bench_function("Complete technical dive profile", |b| {
@@ -320,7 +320,7 @@ pub fn full_dive_profile(c: &mut Criterion) {
             model.record(Depth::from_meters(21.), Time::zero(), &ean50);
 
             // Continue ascent with deco
-            let deco = model.deco(&gases).unwrap();
+            let deco = model.deco(&gases, false).unwrap();
 
             // Various checks
             black_box(model.ceiling());

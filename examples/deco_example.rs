@@ -7,8 +7,8 @@ fn main() {
     // bottom gas
     let air = BreathingSource::OpenCircuit(GasMix::air());
     // deco gases
-    let ean_50 = BreathingSource::OpenCircuit(GasMix::new(0.5, 0.));
-    let oxygen = BreathingSource::OpenCircuit(GasMix::new(1., 0.));
+    let ean_50 = BreathingSource::OpenCircuit(GasMix::try_new(0.5, 0.).unwrap());
+    let oxygen = BreathingSource::OpenCircuit(GasMix::try_new(1., 0.).unwrap());
     let available_gas_mixes = vec![air, ean_50, oxygen];
 
     let bottom_depth = Depth::from_meters(40.);
@@ -21,7 +21,7 @@ fn main() {
     model.record(bottom_depth, bottom_time, &air);
 
     // calculate deco runtime providing available gasses
-    let deco_runtime = model.deco(&available_gas_mixes);
+    let deco_runtime = model.deco(&available_gas_mixes, false);
 
     println!("{:#?}", deco_runtime);
 }

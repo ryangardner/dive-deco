@@ -33,6 +33,11 @@ pub struct BuhlmannConfig {
     pub switch_at_stop_only: bool,
     pub max_end_depth: Depth,
     pub deco_stop_increment: Depth,
+    pub safety_stop_duration: Time,
+    pub safety_stop_depth: Depth,
+    pub safety_stop_trigger_depth: Depth,
+    pub max_pp_o2_normal: Pressure,
+    pub max_pp_o2_deco: Pressure,
 }
 
 impl BuhlmannConfig {
@@ -119,6 +124,31 @@ impl BuhlmannConfig {
         self.deco_stop_increment = depth;
         self
     }
+
+    pub fn with_safety_stop_duration(mut self, duration: Time) -> Self {
+        self.safety_stop_duration = duration;
+        self
+    }
+
+    pub fn with_safety_stop_depth(mut self, depth: Depth) -> Self {
+        self.safety_stop_depth = depth;
+        self
+    }
+
+    pub fn with_safety_stop_trigger_depth(mut self, depth: Depth) -> Self {
+        self.safety_stop_trigger_depth = depth;
+        self
+    }
+
+    pub fn with_max_pp_o2_normal(mut self, max_pp_o2_normal: Pressure) -> Self {
+        self.max_pp_o2_normal = max_pp_o2_normal;
+        self
+    }
+
+    pub fn with_max_pp_o2_deco(mut self, max_pp_o2_deco: Pressure) -> Self {
+        self.max_pp_o2_deco = max_pp_o2_deco;
+        self
+    }
 }
 
 impl Default for BuhlmannConfig {
@@ -139,6 +169,11 @@ impl Default for BuhlmannConfig {
             switch_at_stop_only: false,
             max_end_depth: Depth::from_meters(30.0),
             deco_stop_increment: Depth::from_meters(3.0),
+            safety_stop_duration: Time::from_minutes(3.0),
+            safety_stop_depth: Depth::from_meters(5.0),
+            safety_stop_trigger_depth: Depth::from_meters(10.0),
+            max_pp_o2_normal: 1.4,
+            max_pp_o2_deco: 1.6,
         }
     }
 }
@@ -206,6 +241,26 @@ impl DecoModelConfig for BuhlmannConfig {
 
     fn deco_stop_increment(&self) -> Depth {
         self.deco_stop_increment
+    }
+
+    fn safety_stop_duration(&self) -> Time {
+        self.safety_stop_duration
+    }
+
+    fn safety_stop_depth(&self) -> Depth {
+        self.safety_stop_depth
+    }
+
+    fn safety_stop_trigger_depth(&self) -> Depth {
+        self.safety_stop_trigger_depth
+    }
+
+    fn max_pp_o2_normal(&self) -> Pressure {
+        self.max_pp_o2_normal
+    }
+
+    fn max_pp_o2_deco(&self) -> Pressure {
+        self.max_pp_o2_deco
     }
 }
 

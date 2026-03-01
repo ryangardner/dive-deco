@@ -12,9 +12,14 @@ pub use buhlmann::{
 
 pub use common::{
     BreathingSource, CeilingType, Deco, DecoCalculationError, DecoModel, DecoRuntime, DecoStage,
-    DecoStageType, DecoStopFormatting, Depth, DepthType, DiveComputer, DiveMode, DiveState, Gas,
-    GasMix, GradientFactors, NDLType, Pressure, RecordData, SetpointConfig, SetpointController,
-    Sim, Time, Unit, Units,
+    DecoStageType, DecoStopFormatting, Depth, DepthType, DiveComputer, DiveMode, DiveState, GasError,
+    GasMix, GradientFactors, NDLType, Pressure, RecordData, SetpointConfig, SetpointController, Sim, Time,
+    Unit, Units,
+};
+
+pub use common::planning::{
+    calculate_mod, rule_of_half_turn, rule_of_thirds_turn, segment_usage, BailoutMath,
+    DecoGasPlanner, GasInventory, GasRequirement,
 };
 
 // Re-export Vec and vec macro from alloc for convenience (only with alloc feature)

@@ -18,8 +18,7 @@ pub struct GasMix {
     fraction_n2: f32,
 }
 
-#[deprecated(note = "Use GasMix instead")]
-pub type Gas = GasMix; // Compatibility alias, though we will deprecate usage
+
 
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -60,25 +59,47 @@ impl core::fmt::Display for GasMix {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub enum GasError {
+    InvalidFraction,
+    TotalFractionExceedsOne,
+}
+
+impl core::fmt::Display for GasError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            GasError::InvalidFraction => write!(f, "Invalid gas fraction"),
+            GasError::TotalFractionExceedsOne => write!(f, "Total gas fraction exceeds 1.0"),
+        }
+    }
+}
+
 impl GasMix {
     /// init new gas with fractions (eg. 0.21, 0. for air)
+    #[deprecated(note = "Use try_new instead to avoid panics")]
     pub fn new(o2_fraction: f32, he_fraction: f32) -> Self {
+        Self::try_new(o2_fraction, he_fraction).expect("Invalid gas fractions")
+    }
+
+    /// init new gas with fractions (eg. 0.21, 0. for air), returning Result
+    pub fn try_new(o2_fraction: f32, he_fraction: f32) -> Result<Self, GasError> {
         if !(0. ..=1.).contains(&o2_fraction) {
-            panic!("Invalid O2 fraction");
+            return Err(GasError::InvalidFraction);
         }
         if !(0. ..=1.).contains(&he_fraction) {
-            panic!("Invalid He fraction [{he_fraction}]");
+            return Err(GasError::InvalidFraction);
         }
         if (o2_fraction + he_fraction) > 1. {
-            panic!("Invalid fractions, can't exceed 1.0 in total");
+            return Err(GasError::TotalFractionExceedsOne);
         }
 
         let fraction_n2 = round((1.0 - o2_fraction - he_fraction) * 1000.0) / 1000.0;
-        Self {
+        Ok(Self {
             fraction_o2: o2_fraction,
             fraction_he: he_fraction,
             fraction_n2,
-        }
+        })
     }
 
     pub fn fraction_n2(&self) -> f32 {
@@ -114,6 +135,35 @@ impl GasMix {
             n2: self.fraction_n2 * ambient_pressure,
             he: self.fraction_he * ambient_pressure,
         }
+    }
+
+    /// Returns the density of the gas mix at a given depth in grams per liter (g/L).
+    /// Uses standard densities at STP (0°C, 1 atm) as base approximation.
+    pub fn density(&self, depth: Depth, surface_pressure_mbar: u16) -> f32 {
+        // Standard densities in g/L at STP
+        // O2: 1.429 g/L
+        // He: 0.1786 g/L
+        // N2: 1.251 g/L
+        const DENSITY_O2: f32 = 1.429;
+        const DENSITY_HE: f32 = 0.1786;
+        const DENSITY_N2: f32 = 1.251;
+
+        let mix_density_stp = self.fraction_o2 * DENSITY_O2
+            + self.fraction_he * DENSITY_HE
+            + self.fraction_n2 * DENSITY_N2;
+
+        let pressure_abs_bar =
+            (depth.as_meters() / 10.0) + (surface_pressure_mbar as f32 / 1000.0);
+        
+        mix_density_stp * pressure_abs_bar
+    }
+
+    /// Returns the consumption for a given RMV and time at a specific depth.
+    /// Result in liters (L).
+    pub fn calculate_usage(&self, depth: Depth, surface_pressure_mbar: u16, rmv: f32, duration_mins: f32) -> f32 {
+        let pressure_abs_bar =
+            (depth.as_meters() / 10.0) + (surface_pressure_mbar as f32 / 1000.0);
+        rmv * pressure_abs_bar * duration_mins
     }
 
     /// gas partial pressures in alveoli taking into account alveolar water vapor pressure
@@ -194,9 +244,19 @@ impl GasMix {
         crate::common::physics::pressure_to_depth(p_target, surface_pressure, water_density)
     }
 
+    /// Returns a standard nitrox mix with the given O2 fraction.
+    pub fn nitrox(o2_fraction: f32) -> Result<Self, GasError> {
+        Self::try_new(o2_fraction, 0.0)
+    }
+
+    /// Returns a standard trimix mix with the given O2 and He fractions.
+    pub fn trimix(o2_fraction: f32, he_fraction: f32) -> Result<Self, GasError> {
+        Self::try_new(o2_fraction, he_fraction)
+    }
+
     // TODO standard nitrox (bottom and deco) and trimix gasses
     pub fn air() -> Self {
-        Self::new(0.21, 0.)
+        Self::try_new(0.21, 0.).expect("breathes air")
     }
 
     /// Equivalent Narcotic Depth (END) assuming N2 is narcotic and He is not.
@@ -279,6 +339,25 @@ impl BreathingSource {
 
         self.calculate_pressures(gas_pressure)
     }
+
+    /// Returns the density of the gas mix at a given depth in grams per liter (g/L).
+    /// Uses standard densities at STP (0°C, 1 atm) as base approximation.
+    pub fn density(&self, depth: Depth, surface_pressure_mbar: u16) -> f32 {
+        match self {
+            BreathingSource::OpenCircuit(mix) => mix.density(depth, surface_pressure_mbar),
+            BreathingSource::ClosedCircuit { diluent, .. } => diluent.density(depth, surface_pressure_mbar),
+        }
+    }
+
+    /// Returns the consumption for a given RMV and time at a specific depth.
+    /// Result in liters (L).
+    pub fn calculate_usage(&self, depth: Depth, surface_pressure_mbar: u16, rmv: f32, duration_mins: f32) -> f32 {
+        match self {
+            BreathingSource::OpenCircuit(mix) => mix.calculate_usage(depth, surface_pressure_mbar, rmv, duration_mins),
+            BreathingSource::ClosedCircuit { diluent, .. } => diluent.calculate_usage(depth, surface_pressure_mbar, rmv, duration_mins),
+        }
+    }
+
 
     /// Max Operating Depth (MOD) calculations.
     /// For OC: Derived from gas fraction and ppO2 limit.
@@ -409,7 +488,7 @@ mod tests {
 
     #[test]
     fn test_valid_gas_air() {
-        let air = GasMix::new(0.21, 0.);
+        let air = GasMix::try_new(0.21, 0.).unwrap();
         assert_eq!(air.fraction_o2(), 0.21);
         assert_eq!(air.fraction_n2(), 0.79);
         assert_eq!(air.fraction_he(), 0.);
@@ -417,28 +496,25 @@ mod tests {
 
     #[test]
     fn test_valid_gas_tmx() {
-        let tmx = GasMix::new(0.18, 0.35);
+        let tmx = GasMix::try_new(0.18, 0.35).unwrap();
         assert_eq!(tmx.fraction_o2(), 0.18);
         assert_eq!(tmx.fraction_he(), 0.35);
         assert_eq!(tmx.fraction_n2(), 0.47);
     }
 
     #[test]
-    #[should_panic]
     fn test_invalid_o2_high() {
-        GasMix::new(1.1, 0.);
+        assert_eq!(GasMix::try_new(1.1, 0.), Err(GasError::InvalidFraction));
     }
 
     #[test]
-    #[should_panic]
     fn test_invalid_o2_low() {
-        GasMix::new(-3., 0.);
+        assert_eq!(GasMix::try_new(-3., 0.), Err(GasError::InvalidFraction));
     }
 
     #[test]
-    #[should_panic]
     fn test_invalid_partial_pressures() {
-        GasMix::new(0.5, 0.51);
+        assert_eq!(GasMix::try_new(0.5, 0.51), Err(GasError::TotalFractionExceedsOne));
     }
 
     #[test]
@@ -458,7 +534,7 @@ mod tests {
 
     #[test]
     fn partial_pressures_tmx() {
-        let tmx = GasMix::new(0.21, 0.35);
+        let tmx = GasMix::try_new(0.21, 0.35).unwrap();
         // 10m depth + 1000mbar surface = 2 bar absolute
         let partial_pressures = tmx.partial_pressures(2.0);
         assert_eq!(
@@ -496,7 +572,7 @@ mod tests {
             (0., 0., 1.4, 10000.0),
         ];
         for (pp_o2, pe_he, max_pp_o2, expected_mod) in test_cases {
-            let gas = GasMix::new(pp_o2, pe_he);
+            let gas = GasMix::try_new(pp_o2, pe_he).unwrap();
             let calculated_mod = gas.max_operating_depth(max_pp_o2);
             assert_eq!(calculated_mod, Depth::from_meters(expected_mod));
         }
@@ -511,7 +587,7 @@ mod tests {
             (40., 0.21, 0., 40.),
         ];
         for (depth, o2_pp, he_pp, expected_end) in test_cases {
-            let tmx = GasMix::new(o2_pp, he_pp);
+            let tmx = GasMix::try_new(o2_pp, he_pp).unwrap();
             let calculated_end = tmx.equivalent_narcotic_depth(Depth::from_meters(depth));
             assert_eq!(calculated_end, Depth::from_meters(expected_end));
         }
@@ -520,9 +596,35 @@ mod tests {
     #[test]
     #[cfg(feature = "alloc")]
     fn test_id() {
-        let ean32 = GasMix::new(0.32, 0.);
+        let ean32 = GasMix::try_new(0.32, 0.).unwrap();
         assert_eq!(ean32.id(), "32/0");
-        let tmx2135 = GasMix::new(0.21, 0.35);
+        let tmx2135 = GasMix::try_new(0.21, 0.35).unwrap();
         assert_eq!(tmx2135.id(), "21/35");
+    }
+
+    #[test]
+    fn test_gas_density() {
+        let air = GasMix::air();
+        // Air at surface (0m, 1013mbar)
+        // O2: 0.21 * 1.429 = 0.30009
+        // N2: 0.79 * 1.251 = 0.98829
+        // Total STP: 1.28838
+        // Density = 1.28838 * 1.013 = 1.305
+        let d_surface = air.density(Depth::from_meters(0.0), 1013);
+        assert!((d_surface - 1.305).abs() < 0.01);
+
+        // Air at 30m (4 bar absolute)
+        // Density = 1.28838 * 4.013 = 5.17
+        let d_30m = air.density(Depth::from_meters(30.0), 1013);
+        assert!((d_30m - 5.17).abs() < 0.1);
+        
+        // Heliox 10/90 at 100m (11 bar absolute)
+        // O2: 0.10 * 1.429 = 0.1429
+        // He: 0.90 * 0.1786 = 0.16074
+        // Total STP: 0.30364
+        // Density = 0.30364 * 11.013 = 3.344
+        let heliox = GasMix::try_new(0.1, 0.9).unwrap();
+        let d_100m = heliox.density(Depth::from_meters(100.0), 1013);
+        assert!((d_100m - 3.344).abs() < 0.1);
     }
 }

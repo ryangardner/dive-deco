@@ -19,7 +19,7 @@ fn make_bailouts(gases: &[GasMix]) -> HVec<GasMix, 16> {
 
 #[test]
 fn test_ccr_breathing_source_pressures() {
-    let diluent = GasMix::new(0.21, 0.35); // 21/35 Tmx
+    let diluent = GasMix::try_new(0.21, 0.35).unwrap(); // 21/35 Tmx
     let source = BreathingSource::ClosedCircuit {
         setpoint: 1.3,
         diluent,
@@ -102,7 +102,7 @@ fn test_dive_computer_integration() {
         switch_depth_ascent: Some(6.0),
     };
     let diluent = GasMix::air();
-    let bailout = GasMix::new(0.5, 0.0); // EAN50
+    let bailout = GasMix::try_new(0.5, 0.0).unwrap(); // EAN50
 
     let mut computer = DiveComputer::new(diluent, make_bailouts(&[bailout]), config, DiveMode::ClosedCircuit);
 
@@ -147,7 +147,7 @@ fn test_ccr_deco_calculation() {
     model.record(depth, time, &source);
 
     // Calculate deco
-    let deco_runtime = model.deco(&[source]).unwrap();
+    let deco_runtime = model.deco(&[source], false).unwrap();
 
     // Ensure deco stages use the CCR source
     assert!(deco_runtime.deco_stages.len() > 0);
@@ -162,8 +162,8 @@ fn test_ccr_deco_calculation() {
 fn test_dive_computer_planning() {
     let config = SetpointConfig::default();
     let diluent = GasMix::air();
-    let bailout_1 = GasMix::new(0.32, 0.0); // EAN32
-    let bailout_2 = GasMix::new(0.50, 0.0); // EAN50
+    let bailout_1 = GasMix::try_new(0.32, 0.0).unwrap(); // EAN32
+    let bailout_2 = GasMix::try_new(0.50, 0.0).unwrap(); // EAN50
 
     let computer = DiveComputer::new(
         diluent,
@@ -204,8 +204,8 @@ fn test_dive_computer_planning() {
 fn test_bailout_gas_selection() {
     let config = SetpointConfig::default();
     let air = GasMix::air();
-    let ean50 = GasMix::new(0.50, 0.0);
-    let oxygen = GasMix::new(1.0, 0.0);
+    let ean50 = GasMix::try_new(0.50, 0.0).unwrap();
+    let oxygen = GasMix::try_new(1.0, 0.0).unwrap();
 
     let computer = DiveComputer::new(
         air,

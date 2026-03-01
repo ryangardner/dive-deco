@@ -11,7 +11,7 @@ pub fn model_gf(gf: GradientFactors) -> BuhlmannModel {
 }
 
 pub fn gas_air() -> GasMix {
-    GasMix::new(0.21, 0.)
+    GasMix::try_new(0.21, 0.).unwrap()
 }
 
 #[macro_export]

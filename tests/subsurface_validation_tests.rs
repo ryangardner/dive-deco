@@ -11,7 +11,7 @@ fn test_deep_air_deco_profile() {
         .with_surface_pressure(1013); // "ATM pressure: 1,013mbar (0m)"
 
     let mut model = BuhlmannModel::new(config);
-    let air = BreathingSource::OpenCircuit(GasMix::new(0.21, 0.));
+    let air = BreathingSource::OpenCircuit(GasMix::try_new(0.21, 0.).unwrap());
 
     // "Descend to 10.0 m in 0:10 min - runtime 0:10 on air"
     model.record_travel(Depth::from_meters(10.), Time::from_seconds(10.), &air);
