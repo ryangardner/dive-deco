@@ -80,3 +80,16 @@ pub fn round(val: f32) -> f32 {
         libm::roundf(val)
     }
 }
+
+/// Floor function for f32
+#[inline]
+pub fn floor(val: f32) -> f32 {
+    #[cfg(not(feature = "no-std"))]
+    {
+        val.floor()
+    }
+    #[cfg(feature = "no-std")]
+    {
+        libm::floorf(val)
+    }
+}

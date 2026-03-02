@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::RecordData;
 
 use super::global_types::Otu;
-use super::{exp, powf, Cns, Depth, MbarPressure};
+use super::{exp, powf, round, Cns, Depth, MbarPressure};
 use super::cns_table::CNS_LOOKUP;
 
 const CNS_ELIMINATION_HALF_TIME_MINUTES: f32 = 90.;
@@ -55,7 +55,7 @@ impl OxTox {
         let p_amb = depth_to_pressure(depth, surface_pressure, water_density);
         let pp_o2 = gas.inspired_partial_pressures(p_amb).o2;
 
-        let index = ((pp_o2 - 0.50) * 100.0).round() as isize;
+        let index = round((pp_o2 - 0.50) * 100.0) as isize;
 
         if index >= 0 && index < 131 {
             let t_lim = CNS_LOOKUP[index as usize];

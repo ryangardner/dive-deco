@@ -3,7 +3,7 @@ use crate::buhlmann::compartment::{Compartment, Supersaturation};
 use crate::buhlmann::zhl_values::{ZHLParams, ZHL_16C_N2_16A_HE_VALUES};
 use crate::common::BreathingSource;
 use crate::common::GasMix;
-use crate::common::{abs, ceil, ln};
+use crate::common::{abs, ceil, floor, ln};
 use crate::common::{
     AscentRatePerMinute, ConfigValidationErr, Deco, DecoModel, DecoModelConfig, Depth, DiveState,
     GradientFactor, Otu, OxTox, RecordData,
@@ -636,7 +636,7 @@ impl BuhlmannModel {
         // Integrate ox-tox for the segment (1s steps + fractional remainder)
         if !self.is_sim() {
             let total_sec = time.as_seconds();
-            let whole_steps = total_sec.floor() as usize;
+            let whole_steps = floor(total_sec) as usize;
             let rem = total_sec - (whole_steps as f32);
 
             if whole_steps > 0 {
