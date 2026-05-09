@@ -676,4 +676,95 @@ impl BuhlmannModel {
         };
         self.recalculate_compartments(&final_record);
     }
+
+    /// Extract minimal persistable tissue state.
+    ///
+    /// Returns a fixed-size, `Copy`, no-alloc snapshot containing only the
+    /// mutable state that changes during a dive: 16 N2 pressures, 16 He
+    /// pressures, CNS fraction, and OTU. All static ZHL-16C table constants,
+    /// decay constants, and derived M-values are omitted because they can be
+    /// reconstructed from the config + ZHL tables.
+    ///
+    /// **136 bytes** vs ~1KB for the full serialized model.
+    pub fn tissue_snapshot(&self) -> TissueSnapshot {
+        let mut n2_pressures = [0.0f32; 16];
+        let mut he_pressures = [0.0f32; 16];
+        for (i, comp) in self.compartments.iter().enumerate() {
+            n2_pressures[i] = comp.n2_ip;
+            he_pressures[i] = comp.he_ip;
+        }
+        TissueSnapshot {
+            n2_pressures,
+            he_pressures,
+            cns_fraction: self.state.ox_tox.cns(),
+            otu: self.state.ox_tox.otu(),
+        }
+    }
+
+    /// Reconstruct a full model from persisted tissue pressures + config.
+    ///
+    /// Re-derives all static ZHL params, decay constants, and M-values from
+    /// the ZHL-16C lookup table. The snapshot's tissue pressures are injected
+    /// into the freshly-created compartments, then all derived values
+    /// (`total_ip`, `min_tolerable_amb_pressure`, M-values) are recomputed.
+    ///
+    /// # Arguments
+    /// - `snapshot` — minimal tissue state (136 bytes)
+    /// - `config` — full deco config (GFs, surface pressure, ceiling type, etc.)
+    pub fn from_tissue_snapshot(snapshot: &TissueSnapshot, config: BuhlmannConfig) -> Self {
+        use crate::common::physics::depth_to_pressure;
+        use crate::common::OxTox;
+
+        // 1. Create a fresh model with default compartments from ZHL tables
+        let mut model = Self::new(config);
+
+        // 2. Overwrite tissue pressures from the snapshot
+        for (i, comp) in model.compartments.iter_mut().enumerate() {
+            comp.n2_ip = snapshot.n2_pressures[i];
+            comp.he_ip = snapshot.he_pressures[i];
+            comp.total_ip = comp.n2_ip + comp.he_ip;
+        }
+
+        // 3. Recompute all derived values (M-values, min_tolerable_amb_pressure)
+        //    by running a zero-time recalculation at the surface
+        let p_amb = depth_to_pressure(
+            Depth::zero(),
+            config.surface_pressure,
+            config.water_density,
+        );
+        let air = BreathingSource::OpenCircuit(GasMix::air());
+        let inspired_pp = air.inspired_partial_pressures(p_amb);
+        let (_, gf_high) = config.gf;
+        for comp in model.compartments.iter_mut() {
+            // Zero-time recalculate: updates M-values and ceiling from current tissue state
+            comp.recalculate(p_amb, inspired_pp, Time::zero(), gf_high);
+        }
+
+        // 4. Restore CNS/OTU
+        model.state.ox_tox = OxTox::from_values(snapshot.cns_fraction, snapshot.otu);
+
+        model
+    }
+}
+
+/// Minimal tissue state for persistence. Fixed-size, no-alloc, no-std safe.
+///
+/// Contains only the mutable state that changes during a dive:
+/// - 16 N2 tissue inert pressures
+/// - 16 He tissue inert pressures
+/// - CNS fraction (oxygen toxicity clock)
+/// - OTU (oxygen toxicity units)
+///
+/// **136 bytes** vs ~1KB for the full `BuehlmannModel`.
+///
+/// All static ZHL-16C constants, decay constants (`n2_k`, `he_k`), and derived
+/// values (`total_ip`, `min_tolerable_amb_pressure`, `m_value_raw`, `m_value_calc`)
+/// are reconstructable from the ZHL tables + a `BuehlmannConfig`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct TissueSnapshot {
+    pub n2_pressures: [f32; 16],
+    pub he_pressures: [f32; 16],
+    pub cns_fraction: f32,
+    pub otu: f32,
 }

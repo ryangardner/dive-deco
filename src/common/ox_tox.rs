@@ -25,6 +25,11 @@ impl Default for OxTox {
 }
 
 impl OxTox {
+    /// Reconstruct OxTox from persisted CNS/OTU values.
+    pub fn from_values(cns: Cns, otu: Otu) -> Self {
+        Self { cns, otu }
+    }
+
     pub fn cns(&self) -> Cns {
         self.cns
     }

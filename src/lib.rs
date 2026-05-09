@@ -8,6 +8,7 @@ mod common;
 
 pub use buhlmann::{
     BuehlmannConfig, BuehlmannModel, BuhlmannConfig, BuhlmannModel, Compartment, Supersaturation,
+    TissueSnapshot,
 };
 
 pub use common::{
