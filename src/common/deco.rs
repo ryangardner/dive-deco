@@ -492,7 +492,7 @@ impl Deco {
                 gas: sim_gas,
                 ..
             } = nested_sim_model.dive_state();
-            nested_sim_model.record(sim_depth, Time::from_minutes(5.), &sim_gas);
+            nested_sim_model.record(sim_depth, Time::from_minutes(5_f32), &sim_gas);
             let nested_deco = nested_sim_deco.calc(nested_sim_model, &sorted_gases)?;
             tts_at_5 = nested_deco.tts;
             tts_delta_at_5 = tts_at_5 - tts;

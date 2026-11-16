@@ -179,7 +179,7 @@ impl GasMix {
             // If O2 is 0%, MOD is effectively infinite based on O2 toxicity,
             // though practically unbreathable.
             // Standard behavior usually returns a very deep depth.
-            return Depth::from_meters(10000.0);
+            return Depth::from_meters(10000.0_f32);
         }
         let p_target = pp_o2_limit / self.fraction_o2;
         // Standard dive computers often just allow MOD = (P_target - 1 bar) * 10
@@ -197,7 +197,7 @@ impl GasMix {
         water_density: f32,
     ) -> Depth {
         if self.fraction_o2 <= f32::EPSILON {
-            return Depth::from_meters(10000.0);
+            return Depth::from_meters(10000.0_f32);
         }
         let p_target = pp_o2_limit / self.fraction_o2;
         crate::common::physics::pressure_to_depth(p_target, surface_pressure, water_density)
@@ -211,7 +211,7 @@ impl GasMix {
             // 0% O2 is essentially unbreathable (MinOD infinite)
             // But let's return a very deep depth to indicate it's only safe very deep (if we ignore physiology of pure inert gas)
             // Actually, 0% O2 is NEVER safe. return MAX
-            return Depth::from_meters(10000.0);
+            return Depth::from_meters(10000.0_f32);
         }
 
         // standard dive formula: Depth = 10m/bar * (PO2 / FO2 - P_surface)
@@ -238,7 +238,7 @@ impl GasMix {
         water_density: f32,
     ) -> Depth {
         if self.fraction_o2 <= f32::EPSILON {
-            return Depth::from_meters(10000.0);
+            return Depth::from_meters(10000.0_f32);
         }
         let p_target = min_pp_o2 / self.fraction_o2;
         crate::common::physics::pressure_to_depth(p_target, surface_pressure, water_density)
@@ -372,7 +372,7 @@ impl BreathingSource {
             // Effectively valid everywhere if setpoint is valid.
             // Returning 1000m to represent "no limit from mix" for deco switching logic,
             // assuming SetpointController handles PPO2 management.
-            BreathingSource::ClosedCircuit { .. } => Depth::from_meters(1000.0),
+            BreathingSource::ClosedCircuit { .. } => Depth::from_meters(1000.0_f32),
         }
     }
 
@@ -392,7 +392,7 @@ impl BreathingSource {
                 if *setpoint > pp_o2_limit {
                     Depth::zero()
                 } else {
-                    Depth::from_meters(1000.0)
+                    Depth::from_meters(1000.0_f32)
                 }
             }
         }
@@ -450,7 +450,7 @@ impl BreathingSource {
             }
             BreathingSource::ClosedCircuit { setpoint, .. } => {
                 if *setpoint < min_pp_o2 {
-                    Depth::from_meters(10000.0)
+                    Depth::from_meters(10000.0_f32)
                 } else {
                     Depth::zero()
                 }

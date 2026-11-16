@@ -215,7 +215,7 @@ impl DecoModel for BuhlmannModel {
             Time::from_minutes(low as f32)
         } else {
             // Edge case: even 'low' puts us in deco
-            Time::from_minutes(0.0)
+            Time::from_minutes(0.0_f32)
         }
     }
 
@@ -647,7 +647,7 @@ impl BuhlmannModel {
                     d_m += delta;
                     let step = RecordData {
                         depth: Depth::from_meters(d_m),
-                        time: Time::from_seconds(1.0),
+                        time: Time::from_seconds(1.0_f32),
                         gas,
                     };
                     self.recalculate_ox_tox(&step);
