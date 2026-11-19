@@ -150,7 +150,7 @@ impl Compartment {
         Supersaturation { gf_99, gf_surf }
     }
 
-    fn m_value(&self, p_amb: Pressure, max_gf: GradientFactor) -> Pressure {
+    pub fn m_value(&self, p_amb: Pressure, max_gf: GradientFactor) -> Pressure {
         let weighted_zhl_params = self.weighted_zhl_params(self.he_ip, self.n2_ip);
         let (_, a_coeff_adjusted, b_coeff_adjusted) =
             self.max_gf_adjusted_zhl_params(weighted_zhl_params, max_gf);
@@ -277,7 +277,7 @@ impl Compartment {
     }
 
     // tissue tolerable ambient pressure using GF slope, weighted Buhlmann ZHL params based on tissue inert gasses saturation proportions
-    fn min_tolerable_amb_pressure(&self, max_gf: GradientFactor) -> Pressure {
+    pub fn min_tolerable_amb_pressure(&self, max_gf: GradientFactor) -> Pressure {
         let weighted_zhl_params = self.weighted_zhl_params(self.he_ip, self.n2_ip);
         let (_, a_coefficient_adjusted, b_coefficient_adjusted) =
             self.max_gf_adjusted_zhl_params(weighted_zhl_params, max_gf);

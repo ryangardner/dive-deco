@@ -312,9 +312,12 @@ impl BuhlmannModel {
             depth_to_pressure(Depth::zero(), surface_pressure, self.config.water_density);
         let surface_pp = air.inspired_partial_pressures(surface_p_amb);
 
-        // Target is 1.05 * surface partial pressure (standard safety margin)
+        // Target is 1.05 * surface partial pressure for N2 (standard safety margin),
+        // and 0.05 bar (50 mbar) residual He threshold (matching Deep6 Excursion; since
+        // surface air has 0.0 He, a proportional 1.05x target would be 0.0 and skip He).
+        const HE_DESAT_THRESHOLD_BAR: f32 = 0.05;
         let target_n2 = surface_pp.n2 * 1.05;
-        let target_he = surface_pp.he * 1.05; // Usually 0 for air but good for completeness
+        let target_he = surface_pp.he + HE_DESAT_THRESHOLD_BAR;
 
         let mut max_minutes = 0.0;
 
